@@ -1,50 +1,36 @@
 #!/bin/bash
+# NeuroGraph Installer v6.0 (System Recovery Mode)
 
-# === НАСТРОЙКИ ===
 WORKSPACE="/workspace"
-COMFY_DIR="/workspace/ComfyUI"
-LORA_PATH="$COMFY_DIR/models/loras/Qwen_Pack"
-WC_PATH="$COMFY_DIR/wildcards"
+LORA_PATH="/workspace/ComfyUI/models/loras/Qwen_Pack"
+WC_PATH="/workspace/ComfyUI/wildcards"
 
-echo "🚀 ЗАПУСК УСТАНОВКИ (Silent Mode)..."
+echo "🎨 [NeuroGraph] Начинаю установку компонентов..."
 
-# 1. Библиотеки (тихо)
-pip install python-telegram-bot requests websocket-client > /dev/null 2>&1
+# 1. Файлы бота и конфиги
+cp /workspace/installer/bot.py "$WORKSPACE/bot.py"
+cp /workspace/installer/*.json "$WORKSPACE/" 2>/dev/null
 
-# 2. Файлы
-cp bot.py "$WORKSPACE/bot.py"
-cp *.json "$WORKSPACE/" 2>/dev/null
-
-# 3. Wildcards
+# 2. Wildcards (создаем папку если нет и копируем)
 mkdir -p "$WC_PATH"
-cp -r wildcards/* "$WC_PATH/" 2>/dev/null
+cp -r /workspace/installer/wildcards/* "$WC_PATH/" 2>/dev/null
 
-# 4. ЛОРЫ
+# 3. LoRAs (Тихое скачивание)
 mkdir -p "$LORA_PATH"
-echo "⬇️ Скачивание LoRAs (без лишнего шума)..."
-
-if [ -z "$HF_TOKEN" ]; then
-    HEADER=""
-else
-    HEADER="Authorization: Bearer $HF_TOKEN"
+HEADER_CMD=""
+if [ ! -z "$HF_TOKEN" ]; then
+    HEADER_CMD="--header='Authorization: Bearer $HF_TOKEN'"
 fi
 
-# Скачиваем с флагом -nv (No Verbose - убирает простыню)
-wget -nv --header "$HEADER" -nc -O "$LORA_PATH/Qwen4Play_v2.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen4Play_v2.safetensors?download=true"
+wget -nv $HEADER_CMD -nc -O "$LORA_PATH/Qwen4Play_v2.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen4Play_v2.safetensors?download=true"
+wget -nv $HEADER_CMD -nc -O "$LORA_PATH/Qwen_Snofs_1_3.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen_Snofs_1_3.safetensors?download=true"
+wget -nv $HEADER_CMD -nc -O "$LORA_PATH/breast_slider_qwen_v1.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/breast_slider_qwen_v1.safetensors?download=true"
+wget -nv $HEADER_CMD -nc -O "$LORA_PATH/hips_size_slider_v1.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/hips_size_slider_v1.safetensors?download=true"
 
-wget -nv --header "$HEADER" -nc -O "$LORA_PATH/Qwen_Snofs_1_3.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen_Snofs_1_3.safetensors?download=true"
-
-wget -nv --header "$HEADER" -nc -O "$LORA_PATH/breast_slider_qwen_v1.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/breast_slider_qwen_v1.safetensors?download=true"
-
-wget -nv --header "$HEADER" -nc -O "$LORA_PATH/hips_size_slider_v1.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/hips_size_slider_v1.safetensors?download=true"
-
-# 5. ЗАПУСК БОТА
-echo "🤖 Запуск бота в фоновом режиме..."
+# 4. Запуск бота
+echo "🤖 [NeuroGraph] Запуск Telegram бота..."
+pip install python-telegram-bot requests websocket-client > /dev/null 2>&1
 cd "$WORKSPACE"
-nohup python bot.py > bot.log 2>&1 &
+nohup python bot.py > /workspace/logs/bot.log 2>&1 &
 
-# 6. ЗАПУСК COMFYUI (ФИНАЛ)
-# exec заменяет текущий процесс на ComfyUI, предотвращая перезагрузку контейнера
-echo "⚡ Передаю управление скрипту /start.sh..."
-chmod +x /start.sh
-exec /start.sh
+echo "✅ [NeuroGraph] Установка завершена успешно!"
