@@ -1,5 +1,5 @@
 #!/bin/bash
-# NeuroGraph Installer v13 (Correct URLs)
+# NeuroGraph Installer v15 (User Verified Links)
 
 # --- НАСТРОЙКИ ---
 WORKSPACE="/workspace"
@@ -27,18 +27,15 @@ install_node() {
     fi
 }
 
-# --- 2. УСТАНОВКА НОД (ПРОВЕРЕННЫЕ ССЫЛКИ) ---
+# --- 2. УСТАНОВКА НОД (ТВОИ ССЫЛКИ) ---
 cd "$NODES_PATH"
 
-# Самый важный пак (заменяет String Literals и чинит многое)
-install_node "https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git" "ComfyUI-Custom-Scripts"
-
-# Твои запрошенные ноды
+# Твои паки
 install_node "https://github.com/bash-j/mikey_nodes.git" "mikey_nodes"
-install_node "https://github.com/giriss/ComfyUI-Image-Saver.git" "ComfyUI-Image-Saver"
+install_node "https://github.com/giriss/comfy-image-saver.git" "comfy-image-saver"
 
-# Дополнительно: Logic (часто содержит String Literal)
-install_node "https://github.com/theUpsider/ComfyUI-Logic.git" "ComfyUI-Logic"
+# База (на всякий случай, чтобы система понимала примитивы)
+install_node "https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git" "ComfyUI-Custom-Scripts"
 
 
 # --- 3. СКАЧИВАНИЕ ЛОР ---
