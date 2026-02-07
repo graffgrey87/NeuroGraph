@@ -1,0 +1,12 @@
+верхний ракурс
+нижний ракурс
+прямой ракурс
+на уровне глаз (eye level shot)
+голландский угол, заваленный горизонт (dutch angle)
+вид от первого лица (POV style)
+вид сверху, селфи ракурс (high angle selfie)
+ракурс сверху вниз (from above, high angle)
+съемка с дрона (drone shot, aerial view)
+макросъемка (macro shot)
+широкоугольный объектив (wide angle lens, fisheye)
+вид снизу вверх (low angle, looking up)
