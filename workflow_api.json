@@ -1,0 +1,415 @@
+{
+  "3": {
+    "inputs": {
+      "seed": [
+        "205",
+        0
+      ],
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "228",
+        0
+      ],
+      "positive": [
+        "126",
+        0
+      ],
+      "negative": [
+        "185",
+        0
+      ],
+      "latent_image": [
+        "173",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "39": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "85": {
+    "inputs": {
+      "model_name": "qwen_image_edit_2509_bf16.safetensors",
+      "weight_dtype": "default",
+      "compute_dtype": "default",
+      "patch_cublaslinear": false,
+      "sage_attention": "disabled",
+      "enable_fp16_accumulation": false
+    },
+    "class_type": "DiffusionModelLoaderKJ",
+    "_meta": {
+      "title": "Diffusion Model Loader KJ"
+    }
+  },
+  "89": {
+    "inputs": {
+      "lora_name": "Qwen-Image-Edit-2509-Lightning-8steps-V1.0-bf16.safetensors",
+      "strength_model": 0.95,
+      "model": [
+        "200",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Lora - Qwen Edit Lightning 4/8 steps"
+    }
+  },
+  "115": {
+    "inputs": {
+      "image": "Нейросети.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Image 1 (Main)"
+    }
+  },
+  "118": {
+    "inputs": {
+      "string": "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "Positive"
+    }
+  },
+  "122": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "126": {
+    "inputs": {
+      "prompt": [
+        "230",
+        0
+      ],
+      "clip": [
+        "122",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ],
+      "image1": [
+        "115",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Positive"
+    }
+  },
+  "156": {
+    "inputs": {},
+    "class_type": "FancyTimerNode",
+    "_meta": {
+      "title": "⏳ Execution Timer"
+    }
+  },
+  "172": {
+    "inputs": {
+      "longer_side": 1800,
+      "aspect_ratio": "3:4 (Portrait)",
+      "divisible_by": 16
+    },
+    "class_type": "Resolution",
+    "_meta": {
+      "title": "Custom Resolution"
+    }
+  },
+  "173": {
+    "inputs": {
+      "width": [
+        "172",
+        0
+      ],
+      "height": [
+        "172",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "178": {
+    "inputs": {
+      "tile_size": 320,
+      "overlap": 64,
+      "temporal_size": 8,
+      "temporal_overlap": 4,
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeTiled",
+    "_meta": {
+      "title": "VAE Decode (Tiled)"
+    }
+  },
+  "185": {
+    "inputs": {
+      "conditioning": [
+        "126",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "197": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Use GGUF Model"
+    }
+  },
+  "198": {
+    "inputs": {
+      "unet_name": "Qwen\\Qwen-Image-Edit-2509-Q3_K_M.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
+    }
+  },
+  "199": {
+    "inputs": {
+      "unet_name": "WAN\\Wan2.2-I2V-A14B-HighNoise-Q4_K_M.gguf",
+      "device": "cuda:0",
+      "virtual_vram_gb": 0,
+      "use_other_vram": false,
+      "expert_mode_allocations": ""
+    },
+    "class_type": "UnetLoaderGGUFDisTorchMultiGPU",
+    "_meta": {
+      "title": "UnetLoaderGGUFDisTorchMultiGPU"
+    }
+  },
+  "200": {
+    "inputs": {
+      "switch": [
+        "197",
+        0
+      ],
+      "on_false": [
+        "85",
+        0
+      ],
+      "on_true": [
+        "85",
+        0
+      ]
+    },
+    "class_type": "LazySwitchKJ",
+    "_meta": {
+      "title": "Model Switcher"
+    }
+  },
+  "205": {
+    "inputs": {
+      "seed": 698419738684216
+    },
+    "class_type": "easy seed",
+    "_meta": {
+      "title": "Prompt Seed"
+    }
+  },
+  "206": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "lora_1": {
+        "on": true,
+        "lora": "Qwen_Pack/breast_slider_qwen_v1.safetensors",
+        "strength": 0.3
+      },
+      "lora_2": {
+        "on": true,
+        "lora": "Qwen_Pack/hips_size_slider_v1.safetensors",
+        "strength": 0.2
+      },
+      "lora_3": {
+        "on": false,
+        "lora": "Qwen_Pack/Qwen_Snofs_1_3.safetensors",
+        "strength": 1
+      },
+      "lora_4": {
+        "on": false,
+        "lora": "Qwen_Image\\Edit\\Qwen-Edit_Angles.safetensors",
+        "strength": 0.6
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "89",
+        0
+      ],
+      "clip": [
+        "122",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "Power Lora Loader (rgthree)"
+    }
+  },
+  "207": {
+    "inputs": {
+      "text_0": "На фото крупным планом показана высокая E1arie1 которая лежит на городской площади. На ней обтягивающий свитер. Её наряд выполнен в яркие кислотные цвета (vivid acid colors). Из украшений на ней жемчужное ожерелье (pearl necklace). Ракурс сзади, голландский угол, заваленный горизонт (dutch angle), крупный план, close-up облизывает губы (licking lips). Фото в стиле cyberpunk неон (neon lights, cyberpunk), реалистичное освещение.",
+      "text": [
+        "209",
+        0
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "👀 Output Cation Preview"
+    }
+  },
+  "209": {
+    "inputs": {
+      "find1": "девушка с изображения 1",
+      "replace1": [
+        "211",
+        0
+      ],
+      "find2": "",
+      "replace2": "",
+      "find3": "",
+      "replace3": "",
+      "text": [
+        "230",
+        0
+      ]
+    },
+    "class_type": "CR Text Replace",
+    "_meta": {
+      "title": "Replace in prompt output"
+    }
+  },
+  "211": {
+    "inputs": {
+      "value": "E1arie1"
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "Output Name"
+    }
+  },
+  "212": {
+    "inputs": {
+      "string_a": [
+        "211",
+        0
+      ],
+      "string_b": [
+        "211",
+        0
+      ],
+      "delimiter": "/"
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "SavePath"
+    }
+  },
+  "219": {
+    "inputs": {
+      "images": [
+        "178",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "224": {
+    "inputs": {
+      "filename_prefix": [
+        "212",
+        0
+      ],
+      "output_folder": "output",
+      "caption_file_extension": ".txt",
+      "images": [
+        "178",
+        0
+      ],
+      "caption": [
+        "209",
+        0
+      ]
+    },
+    "class_type": "SaveImageKJ",
+    "_meta": {
+      "title": "Save Image KJ"
+    }
+  },
+  "228": {
+    "inputs": {
+      "shift": 4,
+      "model": [
+        "206",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "230": {
+    "inputs": {
+      "prompt": [
+        "118",
+        0
+      ],
+      "seed": [
+        "205",
+        0
+      ]
+    },
+    "class_type": "Wildcard Processor",
+    "_meta": {
+      "title": "Wildcard Processor (Mikey)"
+    }
+  }
+}
