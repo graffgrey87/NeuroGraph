@@ -1,37 +1,42 @@
 #!/bin/bash
 
-# 1. НАСТРОЙКИ ПУТЕЙ (Строго по базе)
+# === НАСТРОЙКИ ПУТЕЙ ===
 WORKSPACE="/workspace"
 COMFY_DIR="/workspace/ComfyUI"
 LORA_PATH="$COMFY_DIR/models/loras/Qwen_Pack"
-# Путь для Mikey Nodes (корень ComfyUI)
-WC_PATH="$COMFY_DIR/wildcards"
+WC_PATH="$COMFY_DIR/wildcards" # Путь для Mikey Nodes
 
-echo "🚀 УСТАНОВКА (GitHub версия)..."
+echo "🚀 ЗАПУСК УСТАНОВКИ (NeuroGraph Secure)..."
 
-# 2. Библиотеки
+# 1. Библиотеки
 pip install python-telegram-bot requests websocket-client > /dev/null 2>&1
 
-# 3. БОТ: Копируем из скачанной папки репо в корень
+# 2. ФАЙЛЫ: Копируем бота и ВСЕ json файлы (твои воркфлоу)
+echo "📂 Копирование файлов..."
 cp bot.py "$WORKSPACE/bot.py"
+cp *.json "$WORKSPACE/" 2>/dev/null || echo "⚠️ JSON файлы (Workflow) не найдены!"
 
-# 4. ВАЙЛДКАРДЫ: Копируем папку
-echo "📂 Копирование Wildcards..."
+# 3. ВАЙЛДКАРДЫ
+echo "📂 Установка Wildcards..."
 mkdir -p "$WC_PATH"
-# Флаг -r обязателен, чтобы скопировать всё содержимое папки
 cp -r wildcards/* "$WC_PATH/" 2>/dev/null || echo "⚠️ Папка wildcards пуста"
 
-# 5. ЛОРЫ: Качаем с Hugging Face (быстро и без токенов)
+# 4. ЛОРЫ (С АВТОРИЗАЦИЕЙ)
 echo "⬇️ Скачивание LoRAs..."
 mkdir -p "$LORA_PATH"
 
-# Прямые ссылки (Qwen Pack)
-wget -nc -O "$LORA_PATH/Qwen_Snofs_1_3.safetensors" "https://huggingface.co/Losiyp/Qwen_Snofs/resolve/main/Qwen_Snofs_1_3.safetensors?download=true"
-wget -nc -O "$LORA_PATH/breast_slider_qwen_v1.safetensors" "https://huggingface.co/Losiyp/Qwen_Snofs/resolve/main/breast_slider_qwen_v1.safetensors?download=true"
-wget -nc -O "$LORA_PATH/hips_size_slider_v1.safetensors" "https://huggingface.co/Losiyp/Qwen_Snofs/resolve/main/hips_size_slider_v1.safetensors?download=true"
-wget -nc -O "$LORA_PATH/Qwen4Play_v2.safetensors" "https://huggingface.co/Losiyp/Qwen_Snofs/resolve/main/Qwen4Play_v2.safetensors?download=true"
+# Проверка токена
+if [ -z "$HF_TOKEN" ]; then
+  echo "❌ ОШИБКА: Нет HF_TOKEN в настройках RunPod! Скачивание невозможно."
+else
+  # Скачиваем с заголовком авторизации
+  wget --header "Authorization: Bearer $HF_TOKEN" -nc -O "$LORA_PATH/Qwen_Snofs_1_3.safetensors" "https://huggingface.co/Losiyp/Qwen_Snofs/resolve/main/Qwen_Snofs_1_3.safetensors?download=true"
+  wget --header "Authorization: Bearer $HF_TOKEN" -nc -O "$LORA_PATH/breast_slider_qwen_v1.safetensors" "https://huggingface.co/Losiyp/Qwen_Snofs/resolve/main/breast_slider_qwen_v1.safetensors?download=true"
+  wget --header "Authorization: Bearer $HF_TOKEN" -nc -O "$LORA_PATH/hips_size_slider_v1.safetensors" "https://huggingface.co/Losiyp/Qwen_Snofs/resolve/main/hips_size_slider_v1.safetensors?download=true"
+  wget --header "Authorization: Bearer $HF_TOKEN" -nc -O "$LORA_PATH/Qwen4Play_v2.safetensors" "https://huggingface.co/Losiyp/Qwen_Snofs/resolve/main/Qwen4Play_v2.safetensors?download=true"
+fi
 
-# 6. ЗАПУСК
+# 5. ЗАПУСК
 echo "🤖 Запуск бота..."
 cd "$WORKSPACE"
 python bot.py
