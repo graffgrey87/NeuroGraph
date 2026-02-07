@@ -1,22 +1,41 @@
-import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re
+import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ (v4.7 - Anti-Crash)
+# ⚙️ НАСТРОЙКИ (v4.9 - Full Privacy)
 # ==========================================
-ALLOWED_USERS = [386074947]
-BOT_TOKEN = "8242209319:AAEt8QyAp-uwBx7tEoXqbDzkog0yLD3Leok"
+
+# 1. АВТОРИЗАЦИЯ (ID берем из RunPod, скрываем от посторонних)
+# Считываем переменную ADMIN_ID, разбиваем по запятым и превращаем в числа
+raw_ids = os.getenv("ADMIN_ID")
+ALLOWED_USERS = []
+if raw_ids:
+    ALLOWED_USERS = [int(x) for x in raw_ids.split(",") if x.strip().isdigit()]
+
+if not ALLOWED_USERS:
+    print("⚠️ ПРЕДУПРЕЖДЕНИЕ: ADMIN_ID не настроен в RunPod! Бот не будет отвечать на команды.")
+
+# 2. ТОКЕН (Берем из RunPod)
+BOT_TOKEN = os.getenv("TG_TOKEN")
+
+if not BOT_TOKEN:
+    print("❌ ОШИБКА: TG_TOKEN не найден в настройках RunPod!")
+    sys.exit(1)
+
+# 3. НАСТРОЙКИ COMFYUI
 COMFY_PORT = "3000"
 RUNPOD_ID = os.environ.get("RUNPOD_POD_ID", "127.0.0.1")
 COMFY_SERVER = f"127.0.0.1:{COMFY_PORT}"
 
-# Базовый путь к моделям в RunPod
-MODELS_PATH = "/workspace/ComfyUI/models/loras"
+# Базовый путь к моделям
+MODELS_PATH = "/workspace/ComfyUI/models/loras/Qwen_Pack"
 
+# 4. ПРОМПТЫ
 PROMPT_NORMAL = "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 PROMPT_NSFW = "На фото крупным планом показана высокая девушка с изображения 1, которая __действие_nsfw__ __место__. На ней __наряд_nsfw__. Она __доп_действие_nsfw__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 
+# 5. РАБОЧИЕ ПРОЦЕССЫ
 WORKFLOWS = {
     "edit": {"file": "workflow_api.json", "name": "🎨 Редакт (Qwen)", "need_photo": True},
     "gen":  {"file": "workflow_gen.json",  "name": "✨ Генерация (Flux)", "need_photo": False}
@@ -93,7 +112,6 @@ def get_lora_names_from_file():
                         raw = inputs[key]["lora"]
                         clean = raw.replace("\\", "/").split("/")[-1]
                         clean = clean.replace(".safetensors", "")
-                        # === 🔥 FIX CRASH: Убираем спецсимволы ===
                         clean = clean.replace("_", " ").replace("*", "").replace("`", "")
                         if len(clean) > 20: clean = clean[:18] + ".."
                         names[i] = clean
@@ -153,7 +171,7 @@ def get_batch_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🎛 **Center v4.7**\nID: `{RUNPOD_ID}`", reply_markup=get_main_keyboard(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🎛 **Center v4.9**\nID: `{RUNPOD_ID}`", reply_markup=get_main_keyboard(uid), parse_mode="Markdown")
     track_message(uid, update.message.message_id)
     track_message(uid, msg.message_id)
 
@@ -192,7 +210,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         slot = int(query.data.split("_")[2])
         data['awaiting_lora'] = slot
         names = get_lora_names_from_file()
-        # Тут мы используем имена, которые уже очищены, так что падать не будет
         await query.message.edit_text(f"✍️ **LORA {slot}:** `{names[slot]}`\nВведите силу (например `0.8`).\nНапишите `0`, чтобы выключить.", parse_mode="Markdown")
     
     elif query.data == "close_lora":
@@ -213,8 +230,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data['awaiting_lora'] = None
             
             names = get_lora_names_from_file()
-            # Убираем parse_mode="Markdown", чтобы наверняка не крашилось, или используем безопасные имена
-            # Используем * для жирного шрифта (стандарт Markdown)
             await update.message.reply_text(f"🔧 *{names[slot]}* -> {val}", reply_markup=get_main_keyboard(uid), parse_mode="Markdown")
             
             m = await update.message.reply_text("🎛 Микшер:", reply_markup=get_lora_keyboard(uid))
@@ -277,11 +292,11 @@ async def execute_generation(update, context, uid, manual_prompt=None):
         start_time = time.time()
         try:
             if not os.path.exists(wf_config['file']):
-                await context.bot.send_message(chat_id=uid, text=f"❌ Нет файла `{wf_config['file']}`!")
+                await context.bot.send_message(chat_id=uid, text=f"❌ Нет файла `{wf_config['file']}`!\nЗагрузите его на GitHub в корень.")
                 break
             with open(wf_config['file'], "r", encoding="utf-8") as f: workflow = json.load(f)
 
-            # === 1. LORA MIXER ===
+            # === LORA MIXER ===
             id_lora = find_node_id(workflow, ["Power Lora Loader (rgthree)"])
             if id_lora:
                 node = workflow[id_lora]
@@ -291,35 +306,31 @@ async def execute_generation(update, context, uid, manual_prompt=None):
                         user_strength = data['loras'].get(slot_idx, 0.0)
                         node["inputs"][key]["strength"] = user_strength
                         node["inputs"][key]["on"] = (user_strength > 0)
-                        
                         orig_path = node["inputs"][key]["lora"]
                         clean_path = orig_path.replace("\\", "/")
                         node["inputs"][key]["lora"] = clean_path
                         
                         if user_strength > 0:
-                            full_path = os.path.join(MODELS_PATH, clean_path)
-                            if not os.path.exists(full_path):
-                                await context.bot.send_message(chat_id=uid, text=f"⚠️ **Нет файла Lora:**\n`{clean_path}`")
+                            full_path = os.path.join(MODELS_PATH, clean_path.split("/")[-1]) 
+                            # (Проверку файла можно добавить по желанию)
 
-            # === 2. GLOBAL PATH FIXER ===
+            # === GLOBAL PATH FIXER ===
             for nid, node in workflow.items():
                 if "inputs" in node:
                     for key, val in node["inputs"].items():
                         if isinstance(val, str) and ("\\" in val):
                             node["inputs"][key] = val.replace("\\", "/")
             
-            # === 3. SURGICAL SEED ===
+            # === SEED ===
             id_seed = find_node_id(workflow, ["easy seed", "EasySeed"])
-            
             if id_seed:
-                new_seed = random.randint(1, 10**15)
-                workflow[id_seed]["inputs"]["seed"] = new_seed
+                workflow[id_seed]["inputs"]["seed"] = random.randint(1, 10**15)
             else:
                 id_seed = find_node_id(workflow, ["Seed", "KSampler"])
                 if id_seed and "seed" in workflow[id_seed]["inputs"]:
                      workflow[id_seed]["inputs"]["seed"] = random.randint(1, 10**15)
 
-            # === 4. SETUP ===
+            # === SETUP ===
             id_image = find_node_id(workflow, ["LoadImage"])
             id_prompt = find_node_id(workflow, ["String Literal", "CLIPTextEncode", "PrimitiveString"])
             
@@ -331,6 +342,10 @@ async def execute_generation(update, context, uid, manual_prompt=None):
                 workflow[id_prompt]["inputs"][target] = raw_prompt
 
             prompt_data = queue_prompt(workflow)
+            if 'error' in prompt_data:
+                 await context.bot.send_message(chat_id=uid, text=f"🔥 ComfyUI Error: {prompt_data['error']}")
+                 break
+
             prompt_id = prompt_data["prompt_id"]
             
             while True:
@@ -377,5 +392,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    print(f"Бот v4.7 (Anti-Crash) запущен! RunPod ID: {RUNPOD_ID}")
+    print(f"Бот v4.9 (GitHub Secure) запущен! RunPod ID: {RUNPOD_ID}")
     app.run_polling()
