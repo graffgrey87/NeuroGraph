@@ -1,5 +1,5 @@
 #!/bin/bash
-# NeuroGraph Installer v12 (Nodes + Lora + Restart)
+# NeuroGraph Installer v13 (Correct URLs)
 
 # --- НАСТРОЙКИ ---
 WORKSPACE="/workspace"
@@ -21,23 +21,24 @@ install_node() {
     echo "⬇️ Клонирую $DIR_NAME..."
     git clone "$REPO_URL" "$NODES_PATH/$DIR_NAME"
     
-    # Если есть requirements.txt, ставим зависимости (тихо)
     if [ -f "$NODES_PATH/$DIR_NAME/requirements.txt" ]; then
+        echo "📦 Ставлю зависимости для $DIR_NAME..."
         pip install -r "$NODES_PATH/$DIR_NAME/requirements.txt" > /dev/null 2>&1
     fi
 }
 
-# --- 2. УСТАНОВКА НОД ---
+# --- 2. УСТАНОВКА НОД (ПРОВЕРЕННЫЕ ССЫЛКИ) ---
 cd "$NODES_PATH"
 
-# Нода 1: ComfyLiterals (Лечит ошибку String Literal / Positive)
-install_node "https://github.com/idiap/ComfyLiterals.git" "ComfyLiterals"
+# Самый важный пак (заменяет String Literals и чинит многое)
+install_node "https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git" "ComfyUI-Custom-Scripts"
 
-# Нода 2: Mikey Nodes (Ты просил)
+# Твои запрошенные ноды
 install_node "https://github.com/bash-j/mikey_nodes.git" "mikey_nodes"
-
-# Нода 3: Image Saver (Ты просил)
 install_node "https://github.com/giriss/ComfyUI-Image-Saver.git" "ComfyUI-Image-Saver"
+
+# Дополнительно: Logic (часто содержит String Literal)
+install_node "https://github.com/theUpsider/ComfyUI-Logic.git" "ComfyUI-Logic"
 
 
 # --- 3. СКАЧИВАНИЕ ЛОР ---
@@ -60,7 +61,6 @@ download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/re
 
 # --- 4. ЗАПУСК БОТА ---
 echo "🤖 Запуск бота..."
-# Копируем файлы бота, если они скачались в installer
 if [ -d "/workspace/installer" ]; then
     cp /workspace/installer/bot.py "$WORKSPACE/bot.py"
     cp /workspace/installer/*.json "$WORKSPACE/" 2>/dev/null
@@ -68,18 +68,15 @@ if [ -d "/workspace/installer" ]; then
     cp -r /workspace/installer/wildcards/* "$WC_PATH/" 2>/dev/null
 fi
 
-# Ставим либы для бота
 pip install python-telegram-bot requests websocket-client > /dev/null 2>&1
 
 cd "$WORKSPACE"
-# Убиваем старого бота, если был
 pkill -f "bot.py"
 nohup python bot.py > /workspace/logs/bot.log 2>&1 &
 
 
-# --- 5. ФИНАЛЬНЫЙ ШТРИХ: РЕСТАРТ ComfyUI ---
-echo "🔄 Перезагружаю ComfyUI, чтобы он увидел новые ноды..."
-# Убиваем процесс main.py. RunPod сам его перезапустит через 5 секунд.
+# --- 5. ФИНАЛЬНЫЙ РЕСТАРТ ---
+echo "🔄 Перезагружаю ComfyUI..."
 pkill -f "python main.py"
 
-echo "✅ [NeuroGraph] Готово! Через 10-15 секунд можно генерить."
+echo "✅ [NeuroGraph] Установка завершена!"
