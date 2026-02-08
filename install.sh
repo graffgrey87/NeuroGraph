@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# ПУТИ (ЖЕСТКО ЗАДАНЫ)
+# ПУТИ
 VENV_PYTHON="/workspace/venv/bin/python"
 VENV_PIP="/workspace/venv/bin/pip"
 L_PATH="/workspace/ComfyUI/models/loras"
 
-# 1. ЖДЕМ СТАРТА
+# 1. ЖДЕМ ПОРТ 3000
 echo "⏳ Жду порт 3000..."
 while ! wget -q --spider http://127.0.0.1:3000; do
   sleep 2
 done
-echo "✅ Порт 3000 доступен."
+echo "✅ Порт 3000 активен."
 
 # 2. БИБЛИОТЕКИ
 echo "📦 Ставлю библиотеки..."
@@ -23,29 +23,39 @@ cd /workspace/ComfyUI/custom_nodes
 [ ! -d "comfy-image-saver" ] && git clone https://github.com/giriss/comfy-image-saver.git
 [ ! -d "ComfyUI-Custom-Scripts" ] && git clone https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git
 
-# 4. КАЧАЕМ ЛОРЫ (ТЕПЕРЬ ПОДРОБНО!)
-echo "⬇️ НАЧИНАЮ ЗАГРУЗКУ ЛОР..."
+# 4. КАЧАЕМ ЛОРЫ (ИСПОЛЬЗУЕМ ТОКЕН ИЗ ENV!)
+echo "⬇️ Качаю Лоры..."
 mkdir -p "$L_PATH"
 
-# Убрал -q, добавил --verbose и -O для гарантии имени
-# Если файл не скачается - мы увидим ошибку в логе
-wget --verbose -nc -O "$L_PATH/Qwen4Play_v2.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen4Play_v2.safetensors?download=true"
-wget --verbose -nc -O "$L_PATH/Qwen_Snofs_1_3.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen_Snofs_1_3.safetensors?download=true"
-wget --verbose -nc -O "$L_PATH/breast_slider_qwen_v1.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/breast_slider_qwen_v1.safetensors?download=true"
-wget --verbose -nc -O "$L_PATH/hips_size_slider_v1.safetensors" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/hips_size_slider_v1.safetensors?download=true"
+# Функция с авторизацией через переменную окружения $HF_TOKEN
+download_model() {
+    url="$1"
+    file="$2"
+    echo "Скачиваю $file..."
+    if [ -z "$HF_TOKEN" ]; then
+        echo "⚠️ ВНИМАНИЕ: HF_TOKEN не найден! Качаю без авторизации..."
+        wget -q -nc -O "$L_PATH/$file" "$url"
+    else
+        wget -q --header "Authorization: Bearer $HF_TOKEN" -nc -O "$L_PATH/$file" "$url"
+    fi
+}
 
-# КОНТРОЛЬНЫЙ ВЫСТРЕЛ: ВЫВОДИМ СПИСОК ФАЙЛОВ В ЛОГ
-echo "📂 ПРОВЕРКА ПАПКИ LORAS:"
+download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen4Play_v2.safetensors?download=true" "Qwen4Play_v2.safetensors"
+download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen_Snofs_1_3.safetensors?download=true" "Qwen_Snofs_1_3.safetensors"
+download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/breast_slider_qwen_v1.safetensors?download=true" "breast_slider_qwen_v1.safetensors"
+download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/hips_size_slider_v1.safetensors?download=true" "hips_size_slider_v1.safetensors"
+
+# ПРОВЕРКА РАЗМЕРА ФАЙЛОВ
+echo "📂 Проверка скачанного:"
 ls -lh "$L_PATH"
 
 # 5. КОПИРУЕМ БОТА
-echo "🤖 Копирую файлы бота..."
-# Используем прямой путь, так как git clone был в /workspace/installer
+echo "🤖 Копирую бота..."
 cp /workspace/installer/bot.py /workspace/bot.py
 cp /workspace/installer/*.json /workspace/ 2>/dev/null
 [ -d "/workspace/installer/wildcards" ] && cp -r "/workspace/installer/wildcards" "/workspace/ComfyUI/"
 
-# 6. ПЕРЕЗАПУСК
+# 6. ПЕРЕЗАПУСК (С задержкой, чтобы дать Смышникову докачать свои дела, если нужно, но мы все равно его убьем)
 echo "🔄 Рестарт..."
 pkill -f "python main.py"
 pkill -f "bot.py"
