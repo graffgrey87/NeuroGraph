@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ (v4.8 Dynamic)
+# ⚙️ НАСТРОЙКИ (v4.9 Stable Links + ClientID)
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID")
@@ -13,9 +13,9 @@ COMFY_PORT = "3000"
 RUNPOD_ID = os.environ.get("RUNPOD_POD_ID", "127.0.0.1")
 COMFY_SERVER = f"127.0.0.1:{COMFY_PORT}"
 BASE_DIR = "/workspace"
+CLIENT_ID = str(uuid.uuid4()) # Уникальный ID клиента для API
 
-# 🛠 ДИНАМИЧЕСКИЕ НАСТРОЙКИ WORKFLOW
-# Здесь можно добавлять новые режимы (например, "video")
+# Настройки режимов
 WORKFLOWS = {
     "edit": {
         "file": os.path.join(BASE_DIR, "workflow_api.json"), 
@@ -49,7 +49,6 @@ async def check_auth(update: Update):
 
 def get_user_data(uid):
     if uid not in user_data:
-        # wf = текущий активный режим (ключ из словаря WORKFLOWS)
         user_data[uid] = {
             'image': None, 'mode': 'normal', 'wf': 'edit', 'batch': 1, 'msg_ids': [],
             'loras': {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}, 
@@ -58,16 +57,15 @@ def get_user_data(uid):
     return user_data[uid]
 
 def track_message(user_id, message_id):
-    """Сохраняет ID сообщения для последующей очистки"""
+    """Сохраняет ID для очистки"""
     data = get_user_data(user_id)
     if message_id not in data['msg_ids']:
         data['msg_ids'].append(message_id)
-    # Храним последние 100 сообщений
     if len(data['msg_ids']) > 100: 
         data['msg_ids'].pop(0)
 
 def fix_paths_for_linux(workflow):
-    """Меняет обратные слеши на прямые (Windows -> Linux)"""
+    """Меняет \ на /"""
     for nid, node in workflow.items():
         if "inputs" in node:
             for key, val in node["inputs"].items():
@@ -81,29 +79,21 @@ def find_node_id(workflow, class_type_list):
             if node_data.get("class_type") in class_type_list: return node_id
     return None
 
-# --- 🔥 ПАРСЕР ИМЕН ЛОР (Динамический) ---
+# --- 🔥 ПАРСЕР ИМЕН ЛОР ---
 def get_lora_names(uid):
     names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
-    
-    # 1. Определяем, какой файл сейчас нужен пользователю
     data = get_user_data(uid)
-    current_mode = data['wf'] # 'edit' или 'gen'
+    current_mode = data['wf']
     
-    if current_mode not in WORKFLOWS:
-        return names
-
+    if current_mode not in WORKFLOWS: return names
     target_file = WORKFLOWS[current_mode]['file']
     
-    if not os.path.exists(target_file):
-        print(f"⚠️ Файл конфига не найден: {target_file}")
-        return names
+    if not os.path.exists(target_file): return names
 
     try:
         with open(target_file, "r", encoding="utf-8") as f:
             wf = json.load(f)
         
-        # 2. Ищем ноду управления (Power Lora Loader)
-        # Если в workflow_gen.json нет этой ноды, имена останутся стандартными
         nid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
         if nid:
             inputs = wf[nid]["inputs"]
@@ -111,14 +101,13 @@ def get_lora_names(uid):
                 key = f"lora_{i}"
                 if key in inputs and "lora" in inputs[key]:
                     raw = inputs[key]["lora"]
-                    # Чистим имя: путь/файл.safetensors -> файл
                     clean = raw.replace("\\", "/").split("/")[-1]
                     clean = clean.replace(".safetensors", "")
                     clean = clean.replace("_", " ").replace("-", " ")
                     if len(clean) > 20: clean = clean[:18] + ".."
                     names[i] = clean
     except Exception as e:
-        print(f"❌ Ошибка чтения имен Лор: {e}")
+        print(f"❌ Ошибка имен: {e}")
         
     return names
 
@@ -132,7 +121,8 @@ def upload_image(file_bytes, file_name):
     except: return None
 
 def queue_prompt(prompt_workflow):
-    p = {"prompt": prompt_workflow}
+    # 🔥 FIX: Добавлен client_id для корректной работы API
+    p = {"prompt": prompt_workflow, "client_id": CLIENT_ID}
     data = json.dumps(p).encode('utf-8')
     req = urllib.request.Request(f"http://{COMFY_SERVER}/prompt", data=data)
     return json.loads(urllib.request.urlopen(req).read())
@@ -164,26 +154,29 @@ def get_main_kb(uid):
 
 def get_lora_kb(uid):
     d = get_user_data(uid)
-    # 🔥 Читаем имена именно для ТЕКУЩЕГО режима
     real_names = get_lora_names(uid)
     kb = []
-    
     for i in range(1, 5):
         val = d['loras'].get(i, 0.0)
         status = f"✅ {val}" if val > 0 else "❌ OFF"
         name = real_names[i]
         kb.append([InlineKeyboardButton(f"{i}. {name} | {status}", callback_data=f"edit_lora_{i}")])
-    
     kb.append([InlineKeyboardButton("🔙 Закрыть меню", callback_data="close_lora")])
     return InlineKeyboardMarkup(kb)
 
 def get_links_kb():
     base = f"https://{RUNPOD_ID}"
+    # 🔥 FIX: Вернул все ссылки
     url_comfy = f"{base}-{COMFY_PORT}.proxy.runpod.net/"
     url_gallery = f"{base}-8083.proxy.runpod.net/"
+    url_down = f"{base}-8081.proxy.runpod.net/"
+    url_civit = f"{base}-8082.proxy.runpod.net/"
+    url_jupyter = f"{base}-8888.proxy.runpod.net/"
+    
     kb = [
-        [InlineKeyboardButton("🎨 ComfyUI Web", url=url_comfy)],
-        [InlineKeyboardButton("🖼 Галерея (8083)", url=url_gallery)]
+        [InlineKeyboardButton("🎨 ComfyUI Web (3000)", url=url_comfy)],
+        [InlineKeyboardButton("🖼 Галерея (8083)", url=url_gallery), InlineKeyboardButton("💾 Files (8081)", url=url_down)],
+        [InlineKeyboardButton("🧠 CivitAI (8082)", url=url_civit), InlineKeyboardButton("📂 Jupyter (8888)", url=url_jupyter)]
     ]
     return InlineKeyboardMarkup(kb)
 
@@ -198,7 +191,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🎛 **NeuroGraph v4.8**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🎛 **NeuroGraph v4.9**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, update.message.message_id)
     track_message(uid, msg.message_id)
 
@@ -206,10 +199,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
     track_message(uid, update.message.message_id)
-    
     msg = await update.message.reply_text("📥 Загрузка...")
     track_message(uid, msg.message_id)
-    
     try:
         photo = await update.message.photo[-1].get_file()
         fname = f"user_{uid}_{uuid.uuid4().hex[:4]}.jpg"
@@ -251,30 +242,26 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = get_user_data(uid)
     track_message(uid, update.message.message_id)
 
-    # 1. Ввод веса лоры
+    # 1. Вес Лоры
     if d['awaiting_lora']:
         try:
             val = float(text.replace(",", "."))
             slot = d['awaiting_lora']
             d['loras'][slot] = val
             d['awaiting_lora'] = None
-            
             names = get_lora_names(uid)
             m1 = await update.message.reply_text(f"✅ {names[slot]} -> {val}", reply_markup=get_main_kb(uid))
             track_message(uid, m1.message_id)
-            
-            # Возвращаем меню микшера
             m2 = await update.message.reply_text("🎛 Микшер:", reply_markup=get_lora_kb(uid))
             track_message(uid, m2.message_id)
             return
         except:
-            m = await update.message.reply_text("⚠️ Введите число (напр. 0.5)")
+            m = await update.message.reply_text("⚠️ Введите число")
             track_message(uid, m.message_id)
             return
 
     # 2. Очистка
     if text == "🗑 ОЧИСТИТЬ":
-        # Удаляем все сообщения из истории
         count = 0
         for mid in reversed(d['msg_ids']):
             try: 
@@ -282,30 +269,26 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 count += 1
             except: pass
         d['msg_ids'] = []
-        # Отправляем подтверждение и сразу его запоминаем
-        clean_msg = await update.message.reply_text(f"🧹 Удалено {count} сообщений.", reply_markup=get_main_kb(uid))
+        clean_msg = await update.message.reply_text(f"🧹 Чисто.", reply_markup=get_main_kb(uid))
         track_message(uid, clean_msg.message_id)
 
-    # 3. Меню
+    # 3. Меню и ссылки
     elif text == "🎛 LORA MIXER":
         m = await update.message.reply_text("🎛 Настройка Лор:", reply_markup=get_lora_kb(uid))
         track_message(uid, m.message_id)
 
     elif text == "🌐 Ссылки & WebUI":
-        m = await update.message.reply_text("🔗 Ссылки:", reply_markup=get_links_kb())
+        m = await update.message.reply_text("🔗 Порты:", reply_markup=get_links_kb())
         track_message(uid, m.message_id)
     
     elif text.startswith("🔢"):
-        m = await update.message.reply_text("Выберите количество:", reply_markup=get_batch_kb())
+        m = await update.message.reply_text("Количество:", reply_markup=get_batch_kb())
         track_message(uid, m.message_id)
     
     elif text.startswith("🔄"):
-        # Переключение режимов (циклическое по ключам WORKFLOWS)
         keys = list(WORKFLOWS.keys())
-        current_idx = keys.index(d['wf'])
-        next_idx = (current_idx + 1) % len(keys)
-        d['wf'] = keys[next_idx]
-        
+        idx = keys.index(d['wf'])
+        d['wf'] = keys[(idx + 1) % len(keys)]
         m = await update.message.reply_text(f"🔄 Режим: **{WORKFLOWS[d['wf']]['name']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
         track_message(uid, m.message_id)
     
@@ -318,39 +301,33 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await run_generation(update, context, uid)
     
     else:
-        # Текст = Промпт
         await run_generation(update, context, uid, manual_prompt=text)
 
 async def run_generation(update, context, uid, manual_prompt=None):
     d = get_user_data(uid)
     cfg = WORKFLOWS[d['wf']]
     
-    # Проверка фото
     if cfg['need_photo'] and not d['image']:
-        m = await update.message.reply_text(f"⚠️ Для режима '{cfg['name']}' нужно фото!")
+        m = await update.message.reply_text(f"⚠️ Нужно фото!")
         track_message(uid, m.message_id)
         return
 
-    # Промпт
     prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
     
-    status_msg = await update.message.reply_text(f"🚀 Запуск {d['batch']} шт...\nWF: {cfg['name']}")
+    status_msg = await update.message.reply_text(f"🚀 Запуск {d['batch']} шт...")
     track_message(uid, status_msg.message_id)
 
     for i in range(d['batch']):
         start_ts = time.time()
         try:
             if not os.path.exists(cfg['file']):
-                await context.bot.send_message(uid, f"❌ Файл не найден: {cfg['file']}")
+                await context.bot.send_message(uid, f"❌ Нет файла: {cfg['file']}")
                 break
             
-            with open(cfg['file'], "r", encoding="utf-8") as f: 
-                wf = json.load(f)
+            with open(cfg['file'], "r", encoding="utf-8") as f: wf = json.load(f)
 
-            # 1. FIX PATHS (Linux)
             wf = fix_paths_for_linux(wf)
 
-            # 2. LORA MIXER (Node 206)
             lid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
             if lid:
                 for s in range(1, 5):
@@ -360,25 +337,20 @@ async def run_generation(update, context, uid, manual_prompt=None):
                         wf[lid]["inputs"][k]["strength"] = v
                         wf[lid]["inputs"][k]["on"] = (v > 0)
 
-            # 3. SEED
             sid = find_node_id(wf, ["easy seed", "EasySeed"])
             if sid: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
             else:
                 sid = find_node_id(wf, ["Seed", "KSampler"])
                 if sid: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
-            # 4. DATA
             iid = find_node_id(wf, ["LoadImage"])
             tid = find_node_id(wf, ["String Literal", "CLIPTextEncode", "PrimitiveString"])
             
-            if iid and cfg['need_photo']: 
-                wf[iid]["inputs"]["image"] = d['image']
-            
+            if iid and cfg['need_photo']: wf[iid]["inputs"]["image"] = d['image']
             if tid:
                 tkey = "string" if "string" in wf[tid]["inputs"] else "text"
                 wf[tid]["inputs"][tkey] = prompt_txt
 
-            # 5. EXECUTE
             res = queue_prompt(wf)
             if 'error' in res:
                 await context.bot.send_message(uid, f"Comfy Error: {res['error']}")
@@ -390,7 +362,6 @@ async def run_generation(update, context, uid, manual_prompt=None):
                 if pid in h: break
                 time.sleep(1)
             
-            # 6. RESULT
             dur = time.time() - start_ts
             out = h[pid]['outputs']
             found = False
@@ -405,7 +376,7 @@ async def run_generation(update, context, uid, manual_prompt=None):
                         found = True
             
             if not found:
-                m = await context.bot.send_message(uid, "⚠️ Генерация пустая")
+                m = await context.bot.send_message(uid, "⚠️ Пусто")
                 track_message(uid, m.message_id)
 
         except Exception as e:
@@ -413,7 +384,6 @@ async def run_generation(update, context, uid, manual_prompt=None):
             track_message(uid, m.message_id)
             traceback.print_exc()
 
-    # Удаляем сообщение "Запуск..."
     try: await context.bot.delete_message(uid, status_msg.message_id)
     except: pass
     
@@ -426,5 +396,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"Bot v4.8 (Dynamic) Started on {RUNPOD_ID}")
+    print(f"Bot v4.9 (Full Links) Started on {RUNPOD_ID}")
     app.run_polling()
