@@ -23,31 +23,37 @@ cd /workspace/ComfyUI/custom_nodes
 [ ! -d "comfy-image-saver" ] && git clone https://github.com/giriss/comfy-image-saver.git
 [ ! -d "ComfyUI-Custom-Scripts" ] && git clone https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git
 
-# 4. КАЧАЕМ ЛОРЫ (ИСПОЛЬЗУЕМ ТОКЕН ИЗ ENV!)
+# 4. КАЧАЕМ ЛОРЫ (С ПОДРОБНЫМ ЛОГОМ)
 echo "⬇️ Качаю Лоры..."
 mkdir -p "$L_PATH"
 
-# Функция с авторизацией через переменную окружения $HF_TOKEN
 download_model() {
     url="$1"
     file="$2"
-    echo "Скачиваю $file..."
+    echo "---------------------------------------------------"
+    echo "📥 Скачиваю: $file"
+    
     if [ -z "$HF_TOKEN" ]; then
-        echo "⚠️ ВНИМАНИЕ: HF_TOKEN не найден! Качаю без авторизации..."
-        wget -q -nc -O "$L_PATH/$file" "$url"
+        echo "⚠️ HF_TOKEN не найден в переменных! Пробую качать без пароля..."
+        # Убрал -q, чтобы видеть ошибки
+        wget -nc -O "$L_PATH/$file" "$url"
     else
-        wget -q --header "Authorization: Bearer $HF_TOKEN" -nc -O "$L_PATH/$file" "$url"
+        echo "🔒 Использую HF_TOKEN для авторизации..."
+        # Убрал -q, добавил хедер
+        wget --header "Authorization: Bearer $HF_TOKEN" -nc -O "$L_PATH/$file" "$url"
     fi
 }
 
+# Список файлов
 download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen4Play_v2.safetensors?download=true" "Qwen4Play_v2.safetensors"
 download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen_Snofs_1_3.safetensors?download=true" "Qwen_Snofs_1_3.safetensors"
 download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/breast_slider_qwen_v1.safetensors?download=true" "breast_slider_qwen_v1.safetensors"
 download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/hips_size_slider_v1.safetensors?download=true" "hips_size_slider_v1.safetensors"
 
-# ПРОВЕРКА РАЗМЕРА ФАЙЛОВ
-echo "📂 Проверка скачанного:"
+echo "---------------------------------------------------"
+echo "📂 ИТОГОВАЯ ПРОВЕРКА ПАПКИ (Размер не должен быть 0):"
 ls -lh "$L_PATH"
+echo "---------------------------------------------------"
 
 # 5. КОПИРУЕМ БОТА
 echo "🤖 Копирую бота..."
@@ -55,8 +61,8 @@ cp /workspace/installer/bot.py /workspace/bot.py
 cp /workspace/installer/*.json /workspace/ 2>/dev/null
 [ -d "/workspace/installer/wildcards" ] && cp -r "/workspace/installer/wildcards" "/workspace/ComfyUI/"
 
-# 6. ПЕРЕЗАПУСК (С задержкой, чтобы дать Смышникову докачать свои дела, если нужно, но мы все равно его убьем)
-echo "🔄 Рестарт..."
+# 6. ПЕРЕЗАПУСК
+echo "🔄 Убиваю процессы..."
 pkill -f "python main.py"
 pkill -f "bot.py"
 sleep 5
