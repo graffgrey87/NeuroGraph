@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ (v5.0 Full Features)
+# ⚙️ НАСТРОЙКИ (v5.1 Fix Markdown)
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID")
@@ -41,6 +41,11 @@ if not BOT_TOKEN:
 # ==========================================
 # 🛠 ПОМОЩНИКИ
 # ==========================================
+def escape_markdown(text):
+    """Экранирует спецсимволы для MarkdownV2"""
+    special_chars = r'_*[]()~`>#+-=|{}.!'
+    return re.sub(f'([{re.escape(special_chars)}])', r'\\\1', text)
+
 async def check_auth(update: Update):
     if update.effective_user.id not in ALLOWED_USERS:
         await update.message.reply_text("⛔ Доступ запрещен.")
@@ -54,12 +59,12 @@ def get_user_data(uid):
             'mode': 'normal', 
             'wf': 'edit', 
             'batch': 1, 
-            'dataset_name': 'Batch', # Имя по умолчанию
+            'dataset_name': 'Batch', 
             'msg_ids': [],
             'loras': {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}, 
             'awaiting_lora': None,
-            'awaiting_custom_batch': False, # Флаг ожидания ввода числа
-            'awaiting_dataset_name': False  # Флаг ожидания имени
+            'awaiting_custom_batch': False,
+            'awaiting_dataset_name': False
         }
     return user_data[uid]
 
@@ -198,7 +203,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.0**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.1**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, update.message.message_id)
     track_message(uid, msg.message_id)
 
@@ -367,7 +372,6 @@ async def run_generation(update, context, uid, manual_prompt=None):
             wf = fix_paths_for_linux(wf)
 
             # === SET NAME (Node 211) ===
-            # Проверяем, есть ли нода 211 и меняем ей имя
             if "211" in wf and "inputs" in wf["211"]:
                 wf["211"]["inputs"]["value"] = d['dataset_name']
 
@@ -416,8 +420,11 @@ async def run_generation(update, context, uid, manual_prompt=None):
                 if 'images' in out[nid]:
                     for img in out[nid]['images']:
                         idata = get_view(img['filename'], img['subfolder'], img['type'])
-                        # 🔥 SPOILER PROMPT
-                        cap = f"🖼 {i+1}/{d['batch']} ({dur:.1f}s)\n\n||{prompt_txt[:900]}||"
+                        
+                        # 🔥 FIXED SPOILER PROMPT
+                        safe_prompt = escape_markdown(prompt_txt[:900])
+                        cap = f"🖼 {i+1}/{d['batch']} ({dur:.1f}s)\n\n||{safe_prompt}||"
+                        
                         m = await context.bot.send_photo(uid, idata, caption=cap, parse_mode="MarkdownV2")
                         track_message(uid, m.message_id)
                         found = True
@@ -443,5 +450,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"Bot v5.0 (Full Features) Started on {RUNPOD_ID}")
+    print(f"Bot v5.1 (Markdown Fix) Started on {RUNPOD_ID}")
     app.run_polling()
