@@ -1,19 +1,20 @@
 #!/bin/bash
 
 # 1. ЖДЕМ ЗАПУСКА СМЫШНИКОВА (ПОРТ 3000)
-# Это гарантия того, что базовый контейнер готов
-echo "⏳ Жду порт 3000..."
-while ! netstat -tuln | grep ":3000 " > /dev/null; do
+echo "⏳ Жду, пока ComfyUI ответит на порту 3000..."
+
+# ИСПРАВЛЕНИЕ: Используем wget вместо netstat (так как netstat нет в системе)
+# Мы пытаемся подключиться к локальному серверу. Пока он не ответит, ждем.
+while ! wget -q --spider http://127.0.0.1:3000; do
   sleep 2
 done
-echo "✅ ComfyUI активен."
+
+echo "✅ ComfyUI (Port 3000) ответил! Начинаю установку..."
 
 # 2. СТАВИМ ЗАВИСИМОСТИ
-# То, что ты делал вручную
 pip install python-telegram-bot requests websocket-client > /dev/null 2>&1
 
 # 3. НОДЫ
-# Ставим только если их нет
 cd /workspace/ComfyUI/custom_nodes
 [ ! -d "mikey_nodes" ] && git clone https://github.com/bash-j/mikey_nodes.git
 [ ! -d "comfy-image-saver" ] && git clone https://github.com/giriss/comfy-image-saver.git
@@ -29,7 +30,6 @@ wget -q -nc -P "$L_PATH" "https://huggingface.co/datasets/AleksandrGrey87/My-Com
 wget -q -nc -P "$L_PATH" "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/hips_size_slider_v1.safetensors?download=true"
 
 # 5. КОПИРУЕМ БОТА ИЗ СКАЧАННОГО РЕПОЗИТОРИЯ
-# Это позволяет тебе менять бота в Гитхабе, и он обновится тут
 SCRIPT_DIR=$(dirname "$0")
 cp "$SCRIPT_DIR/bot.py" /workspace/bot.py
 cp "$SCRIPT_DIR/"*.json /workspace/ 2>/dev/null
@@ -40,12 +40,12 @@ cp "$SCRIPT_DIR/"*.json /workspace/ 2>/dev/null
 echo "🔄 Рестарт Comfy..."
 pkill -f "python main.py"
 pkill -f "bot.py"
-sleep 3
+sleep 5
 
 echo "🤖 Старт Бота..."
 nohup python /workspace/bot.py > /workspace/bot.log 2>&1 &
 
 echo "🚀 Старт ComfyUI..."
 cd /workspace/ComfyUI
-# Запускаем на 3000, чтобы RunPod видел его живым
+# Запускаем на 3000
 python main.py --listen 0.0.0.0 --port 3000
