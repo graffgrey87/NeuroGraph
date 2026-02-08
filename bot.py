@@ -1,9 +1,9 @@
-import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys
+import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ (v5.1 Fix Markdown)
+# ⚙️ НАСТРОЙКИ (v5.2 HTML Fix)
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID")
@@ -41,10 +41,9 @@ if not BOT_TOKEN:
 # ==========================================
 # 🛠 ПОМОЩНИКИ
 # ==========================================
-def escape_markdown(text):
-    """Экранирует спецсимволы для MarkdownV2"""
-    special_chars = r'_*[]()~`>#+-=|{}.!'
-    return re.sub(f'([{re.escape(special_chars)}])', r'\\\1', text)
+def escape_html(text):
+    """Экранирует символы для HTML (надежнее чем Markdown)"""
+    return html.escape(str(text))
 
 async def check_auth(update: Update):
     if update.effective_user.id not in ALLOWED_USERS:
@@ -203,7 +202,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.1**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.2**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, update.message.message_id)
     track_message(uid, msg.message_id)
 
@@ -421,11 +420,11 @@ async def run_generation(update, context, uid, manual_prompt=None):
                     for img in out[nid]['images']:
                         idata = get_view(img['filename'], img['subfolder'], img['type'])
                         
-                        # 🔥 FIXED SPOILER PROMPT
-                        safe_prompt = escape_markdown(prompt_txt[:900])
-                        cap = f"🖼 {i+1}/{d['batch']} ({dur:.1f}s)\n\n||{safe_prompt}||"
+                        # 🔥 SPOILER PROMPT HTML FIX
+                        safe_prompt = escape_html(prompt_txt[:900])
+                        cap = f"🖼 {i+1}/{d['batch']} ({dur:.1f}s)\n\n<span class='tg-spoiler'>{safe_prompt}</span>"
                         
-                        m = await context.bot.send_photo(uid, idata, caption=cap, parse_mode="MarkdownV2")
+                        m = await context.bot.send_photo(uid, idata, caption=cap, parse_mode="HTML")
                         track_message(uid, m.message_id)
                         found = True
             
@@ -450,5 +449,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"Bot v5.1 (Markdown Fix) Started on {RUNPOD_ID}")
+    print(f"Bot v5.2 (HTML Fix) Started on {RUNPOD_ID}")
     app.run_polling()
