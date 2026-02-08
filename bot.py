@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ (v4.7 Final + Path Fixer)
+# ⚙️ НАСТРОЙКИ (v4.8 Dynamic)
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID")
@@ -12,23 +12,34 @@ ALLOWED_USERS = [int(x) for x in raw_ids.split(",") if x.strip().isdigit()] if r
 COMFY_PORT = "3000"
 RUNPOD_ID = os.environ.get("RUNPOD_POD_ID", "127.0.0.1")
 COMFY_SERVER = f"127.0.0.1:{COMFY_PORT}"
-MODELS_PATH = "/workspace/ComfyUI/models/loras"
+BASE_DIR = "/workspace"
 
-if not BOT_TOKEN:
-    sys.exit("❌ TG_TOKEN не задан!")
+# 🛠 ДИНАМИЧЕСКИЕ НАСТРОЙКИ WORKFLOW
+# Здесь можно добавлять новые режимы (например, "video")
+WORKFLOWS = {
+    "edit": {
+        "file": os.path.join(BASE_DIR, "workflow_api.json"), 
+        "name": "🎨 Редакт (Qwen)", 
+        "need_photo": True
+    },
+    "gen": {
+        "file": os.path.join(BASE_DIR, "workflow_gen.json"),  
+        "name": "✨ Генерация (Flux)", 
+        "need_photo": False
+    }
+}
 
 PROMPT_NORMAL = "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 PROMPT_NSFW = "На фото крупным планом показана высокая девушка с изображения 1, которая __действие_nsfw__ __место__. На ней __наряд_nsfw__. Она __доп_действие_nsfw__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 
-WORKFLOWS = {
-    "edit": {"file": "workflow_api.json", "name": "🎨 Редакт (Qwen)", "need_photo": True},
-    "gen":  {"file": "workflow_gen.json",  "name": "✨ Генерация (Flux)", "need_photo": False}
-}
-
 user_data = {}
 
+if not BOT_TOKEN:
+    print("❌ ОШИБКА: TG_TOKEN не задан!")
+    sys.exit(1)
+
 # ==========================================
-# 🛠 ФУНКЦИИ ПОМОЩНИКИ
+# 🛠 ПОМОЩНИКИ
 # ==========================================
 async def check_auth(update: Update):
     if update.effective_user.id not in ALLOWED_USERS:
@@ -38,6 +49,7 @@ async def check_auth(update: Update):
 
 def get_user_data(uid):
     if uid not in user_data:
+        # wf = текущий активный режим (ключ из словаря WORKFLOWS)
         user_data[uid] = {
             'image': None, 'mode': 'normal', 'wf': 'edit', 'batch': 1, 'msg_ids': [],
             'loras': {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}, 
@@ -46,17 +58,20 @@ def get_user_data(uid):
     return user_data[uid]
 
 def track_message(user_id, message_id):
+    """Сохраняет ID сообщения для последующей очистки"""
     data = get_user_data(user_id)
-    data['msg_ids'].append(message_id)
-    if len(data['msg_ids']) > 50: data['msg_ids'].pop(0)
+    if message_id not in data['msg_ids']:
+        data['msg_ids'].append(message_id)
+    # Храним последние 100 сообщений
+    if len(data['msg_ids']) > 100: 
+        data['msg_ids'].pop(0)
 
-# 🔥 ГЛАВНЫЙ ФИКСЕР ПУТЕЙ (Linux-совместимость)
-def fix_workflow_paths(workflow):
+def fix_paths_for_linux(workflow):
+    """Меняет обратные слеши на прямые (Windows -> Linux)"""
     for nid, node in workflow.items():
         if "inputs" in node:
             for key, val in node["inputs"].items():
                 if isinstance(val, str) and "\\" in val:
-                    # Меняем обратный слеш на прямой
                     node["inputs"][key] = val.replace("\\", "/")
     return workflow
 
@@ -66,8 +81,49 @@ def find_node_id(workflow, class_type_list):
             if node_data.get("class_type") in class_type_list: return node_id
     return None
 
-# --- COMFY API ---
-def upload_image_to_comfy(file_bytes, file_name):
+# --- 🔥 ПАРСЕР ИМЕН ЛОР (Динамический) ---
+def get_lora_names(uid):
+    names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
+    
+    # 1. Определяем, какой файл сейчас нужен пользователю
+    data = get_user_data(uid)
+    current_mode = data['wf'] # 'edit' или 'gen'
+    
+    if current_mode not in WORKFLOWS:
+        return names
+
+    target_file = WORKFLOWS[current_mode]['file']
+    
+    if not os.path.exists(target_file):
+        print(f"⚠️ Файл конфига не найден: {target_file}")
+        return names
+
+    try:
+        with open(target_file, "r", encoding="utf-8") as f:
+            wf = json.load(f)
+        
+        # 2. Ищем ноду управления (Power Lora Loader)
+        # Если в workflow_gen.json нет этой ноды, имена останутся стандартными
+        nid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
+        if nid:
+            inputs = wf[nid]["inputs"]
+            for i in range(1, 5):
+                key = f"lora_{i}"
+                if key in inputs and "lora" in inputs[key]:
+                    raw = inputs[key]["lora"]
+                    # Чистим имя: путь/файл.safetensors -> файл
+                    clean = raw.replace("\\", "/").split("/")[-1]
+                    clean = clean.replace(".safetensors", "")
+                    clean = clean.replace("_", " ").replace("-", " ")
+                    if len(clean) > 20: clean = clean[:18] + ".."
+                    names[i] = clean
+    except Exception as e:
+        print(f"❌ Ошибка чтения имен Лор: {e}")
+        
+    return names
+
+# --- API COMFYUI ---
+def upload_image(file_bytes, file_name):
     try:
         files = {'image': (file_name, file_bytes)}
         data = {'type': 'input', 'overwrite': 'true'}
@@ -87,89 +143,62 @@ def get_history(prompt_id):
             return json.loads(response.read())
     except: return {}
 
-def get_image(filename, subfolder, folder_type):
+def get_view(filename, subfolder, folder_type):
     data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
     url_values = urllib.parse.urlencode(data)
     with urllib.request.urlopen(f"http://{COMFY_SERVER}/view?{url_values}") as response:
         return response.read()
 
-# --- LORA NAMES ---
-def get_lora_names_from_file():
-    names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
-    try:
-        if os.path.exists("workflow_api.json"):
-            with open("workflow_api.json", "r", encoding="utf-8") as f:
-                wf = json.load(f)
-            nid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
-            if nid:
-                inputs = wf[nid]["inputs"]
-                for i in range(1, 5):
-                    key = f"lora_{i}"
-                    if key in inputs and "lora" in inputs[key]:
-                        raw = inputs[key]["lora"]
-                        # Убираем пути, оставляем только имя файла
-                        clean = raw.replace("\\", "/").split("/")[-1]
-                        clean = clean.replace(".safetensors", "")
-                        clean = clean.replace("_", " ").replace("*", "").replace("`", "")
-                        if len(clean) > 20: clean = clean[:18] + ".."
-                        names[i] = clean
-    except: pass
-    return names
-
-# --- KEYBOARDS ---
-def get_main_keyboard(uid):
-    data = get_user_data(uid)
-    wf_name = WORKFLOWS[data['wf']]['name']
-    mode_icon = "😇" if data['mode'] == 'normal' else "😈"
-    keyboard = [
+# --- КЛАВИАТУРЫ ---
+def get_main_kb(uid):
+    d = get_user_data(uid)
+    wf_name = WORKFLOWS[d['wf']]['name']
+    mode_icon = "😇" if d['mode'] == 'normal' else "😈"
+    kb = [
         [KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
-        [KeyboardButton(f"🔄 WF: {wf_name}"), KeyboardButton(f"🔢 Кол-во: {data['batch']}")],
-        [KeyboardButton(f"{mode_icon} Режим: {data['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
+        [KeyboardButton(f"🔄 WF: {wf_name}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
+        [KeyboardButton(f"{mode_icon} Режим: {d['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
         [KeyboardButton("🌐 Ссылки & WebUI")]
     ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
-def get_lora_keyboard(uid):
-    data = get_user_data(uid)
-    real_names = get_lora_names_from_file()
-    keyboard = []
+def get_lora_kb(uid):
+    d = get_user_data(uid)
+    # 🔥 Читаем имена именно для ТЕКУЩЕГО режима
+    real_names = get_lora_names(uid)
+    kb = []
     
     for i in range(1, 5):
-        val = data['loras'].get(i, 0.0)
+        val = d['loras'].get(i, 0.0)
         status = f"✅ {val}" if val > 0 else "❌ OFF"
         name = real_names[i]
-        keyboard.append([InlineKeyboardButton(f"{i}. {name} | {status}", callback_data=f"edit_lora_{i}")])
+        kb.append([InlineKeyboardButton(f"{i}. {name} | {status}", callback_data=f"edit_lora_{i}")])
     
-    keyboard.append([InlineKeyboardButton("🔙 Закрыть меню", callback_data="close_lora")])
-    return InlineKeyboardMarkup(keyboard)
+    kb.append([InlineKeyboardButton("🔙 Закрыть меню", callback_data="close_lora")])
+    return InlineKeyboardMarkup(kb)
 
-def get_links_keyboard():
+def get_links_kb():
     base = f"https://{RUNPOD_ID}"
     url_comfy = f"{base}-{COMFY_PORT}.proxy.runpod.net/"
     url_gallery = f"{base}-8083.proxy.runpod.net/"
-    url_down = f"{base}-8081.proxy.runpod.net/"
-    url_civit = f"{base}-8082.proxy.runpod.net/"
-    url_jupyter = f"{base}-8888.proxy.runpod.net/"
-    
-    keyboard = [
+    kb = [
         [InlineKeyboardButton("🎨 ComfyUI Web", url=url_comfy)],
-        [InlineKeyboardButton("🖼 Галерея (8083)", url=url_gallery), InlineKeyboardButton("💾 Downloader (8081)", url=url_down)],
-        [InlineKeyboardButton("🧠 CivitAI (8082)", url=url_civit), InlineKeyboardButton("📂 Jupyter (8888)", url=url_jupyter)]
+        [InlineKeyboardButton("🖼 Галерея (8083)", url=url_gallery)]
     ]
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup(kb)
 
-def get_batch_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("1", callback_data="batch_1"), InlineKeyboardButton("2", callback_data="batch_2"), InlineKeyboardButton("3", callback_data="batch_3"), InlineKeyboardButton("5", callback_data="batch_5")],
-        [InlineKeyboardButton("10", callback_data="batch_10")]
+def get_batch_kb():
+    kb = [
+        [InlineKeyboardButton("1", callback_data="batch_1"), InlineKeyboardButton("2", callback_data="batch_2"), InlineKeyboardButton("3", callback_data="batch_3")],
+        [InlineKeyboardButton("5", callback_data="batch_5"), InlineKeyboardButton("10", callback_data="batch_10")]
     ]
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup(kb)
 
-# --- HANDLERS ---
+# --- ОБРАБОТЧИКИ ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🎛 **Center v4.7**\nID: `{RUNPOD_ID}`", reply_markup=get_main_keyboard(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🎛 **NeuroGraph v4.8**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, update.message.message_id)
     track_message(uid, msg.message_id)
 
@@ -177,13 +206,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
     track_message(uid, update.message.message_id)
+    
     msg = await update.message.reply_text("📥 Загрузка...")
     track_message(uid, msg.message_id)
+    
     try:
         photo = await update.message.photo[-1].get_file()
-        fname = f"qwen_{uid}_{uuid.uuid4().hex[:4]}.jpg"
+        fname = f"user_{uid}_{uuid.uuid4().hex[:4]}.jpg"
         fbytes = await photo.download_as_bytearray()
-        resp = upload_image_to_comfy(fbytes, fname)
+        resp = upload_image(fbytes, fname)
         if resp:
             real_name = resp.get("name", fname)
             get_user_data(uid)['image'] = real_name
@@ -194,184 +225,199 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     uid = query.from_user.id
-    data = get_user_data(uid)
+    d = get_user_data(uid)
     await query.answer()
 
     if query.data.startswith("batch_"):
         count = int(query.data.split("_")[1])
-        data['batch'] = count
-        await query.message.edit_text(f"🔢 Установлено: **{count} шт.**", parse_mode="Markdown")
-        m = await context.bot.send_message(chat_id=uid, text="Меню обновлено:", reply_markup=get_main_keyboard(uid))
+        d['batch'] = count
+        await query.message.edit_text(f"🔢 Batch: **{count}**", parse_mode="Markdown")
+        m = await context.bot.send_message(chat_id=uid, text="Меню обновлено", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
     elif query.data.startswith("edit_lora_"):
         slot = int(query.data.split("_")[2])
-        data['awaiting_lora'] = slot
-        names = get_lora_names_from_file()
-        await query.message.edit_text(f"✍️ **LORA {slot}:** `{names[slot]}`\nВведите силу (например `0.8`).\nНапишите `0`, чтобы выключить.", parse_mode="Markdown")
+        d['awaiting_lora'] = slot
+        names = get_lora_names(uid)
+        await query.message.edit_text(f"✍️ **{names[slot]}**\nВведите вес (0.1 - 1.0) или 0:", parse_mode="Markdown")
     
     elif query.data == "close_lora":
         await query.message.delete()
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
     text = update.message.text
-    data = get_user_data(uid)
+    d = get_user_data(uid)
     track_message(uid, update.message.message_id)
 
-    if data['awaiting_lora'] is not None:
+    # 1. Ввод веса лоры
+    if d['awaiting_lora']:
         try:
             val = float(text.replace(",", "."))
-            slot = data['awaiting_lora']
-            data['loras'][slot] = val
-            data['awaiting_lora'] = None
+            slot = d['awaiting_lora']
+            d['loras'][slot] = val
+            d['awaiting_lora'] = None
             
-            names = get_lora_names_from_file()
-            await update.message.reply_text(f"🔧 *{names[slot]}* -> {val}", reply_markup=get_main_keyboard(uid), parse_mode="Markdown")
+            names = get_lora_names(uid)
+            m1 = await update.message.reply_text(f"✅ {names[slot]} -> {val}", reply_markup=get_main_kb(uid))
+            track_message(uid, m1.message_id)
             
-            m = await update.message.reply_text("🎛 Микшер:", reply_markup=get_lora_keyboard(uid))
+            # Возвращаем меню микшера
+            m2 = await update.message.reply_text("🎛 Микшер:", reply_markup=get_lora_kb(uid))
+            track_message(uid, m2.message_id)
+            return
+        except:
+            m = await update.message.reply_text("⚠️ Введите число (напр. 0.5)")
             track_message(uid, m.message_id)
             return
-        except ValueError:
-            await update.message.reply_text("⚠️ Нужно ввести число (например 0.5).")
-            return
 
+    # 2. Очистка
     if text == "🗑 ОЧИСТИТЬ":
-        for mid in reversed(data['msg_ids']):
-            try: await context.bot.delete_message(chat_id=uid, message_id=mid)
+        # Удаляем все сообщения из истории
+        count = 0
+        for mid in reversed(d['msg_ids']):
+            try: 
+                await context.bot.delete_message(chat_id=uid, message_id=mid)
+                count += 1
             except: pass
-        data['msg_ids'] = []
-    
+        d['msg_ids'] = []
+        # Отправляем подтверждение и сразу его запоминаем
+        clean_msg = await update.message.reply_text(f"🧹 Удалено {count} сообщений.", reply_markup=get_main_kb(uid))
+        track_message(uid, clean_msg.message_id)
+
+    # 3. Меню
     elif text == "🎛 LORA MIXER":
-        m = await update.message.reply_text("🎛 **Настройка LORA:**", reply_markup=get_lora_keyboard(uid))
+        m = await update.message.reply_text("🎛 Настройка Лор:", reply_markup=get_lora_kb(uid))
         track_message(uid, m.message_id)
 
     elif text == "🌐 Ссылки & WebUI":
-        m = await update.message.reply_text("🔗 Сервисы:", reply_markup=get_links_keyboard())
+        m = await update.message.reply_text("🔗 Ссылки:", reply_markup=get_links_kb())
         track_message(uid, m.message_id)
     
     elif text.startswith("🔢"):
-        m = await update.message.reply_text("Количество копий:", reply_markup=get_batch_keyboard())
+        m = await update.message.reply_text("Выберите количество:", reply_markup=get_batch_kb())
         track_message(uid, m.message_id)
     
     elif text.startswith("🔄"):
-        data['wf'] = "gen" if data['wf'] == "edit" else "edit"
-        m = await update.message.reply_text(f"🔄 WF: **{WORKFLOWS[data['wf']]['name']}**", reply_markup=get_main_keyboard(uid), parse_mode="Markdown")
+        # Переключение режимов (циклическое по ключам WORKFLOWS)
+        keys = list(WORKFLOWS.keys())
+        current_idx = keys.index(d['wf'])
+        next_idx = (current_idx + 1) % len(keys)
+        d['wf'] = keys[next_idx]
+        
+        m = await update.message.reply_text(f"🔄 Режим: **{WORKFLOWS[d['wf']]['name']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
         track_message(uid, m.message_id)
     
     elif "Режим:" in text:
-        data['mode'] = 'nsfw' if data['mode'] == 'normal' else 'normal'
-        m = await update.message.reply_text(f"Режим: {data['mode'].upper()}", reply_markup=get_main_keyboard(uid))
+        d['mode'] = 'nsfw' if d['mode'] == 'normal' else 'normal'
+        m = await update.message.reply_text(f"Режим: {d['mode'].upper()}", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
     
     elif text == "🚀 ГЕНЕРАЦИЯ":
-        await execute_generation(update, context, uid)
+        await run_generation(update, context, uid)
     
     else:
-        await execute_generation(update, context, uid, manual_prompt=text)
+        # Текст = Промпт
+        await run_generation(update, context, uid, manual_prompt=text)
 
-async def execute_generation(update, context, uid, manual_prompt=None):
-    data = get_user_data(uid)
-    wf_config = WORKFLOWS[data['wf']]
+async def run_generation(update, context, uid, manual_prompt=None):
+    d = get_user_data(uid)
+    cfg = WORKFLOWS[d['wf']]
     
-    if wf_config['need_photo'] and not data['image']:
-        m = await update.message.reply_text(f"⚠️ Для '{wf_config['name']}' нужно фото!")
+    # Проверка фото
+    if cfg['need_photo'] and not d['image']:
+        m = await update.message.reply_text(f"⚠️ Для режима '{cfg['name']}' нужно фото!")
         track_message(uid, m.message_id)
         return
 
-    raw_prompt = manual_prompt if manual_prompt else (PROMPT_NORMAL if data['mode'] == 'normal' else PROMPT_NSFW)
-    count = data['batch']
+    # Промпт
+    prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
     
-    status_msg = await update.message.reply_text(f"🚀 Серия: **{count} шт.**\nWF: {wf_config['name']}", parse_mode="Markdown")
+    status_msg = await update.message.reply_text(f"🚀 Запуск {d['batch']} шт...\nWF: {cfg['name']}")
     track_message(uid, status_msg.message_id)
 
-    for i in range(count):
-        start_time = time.time()
+    for i in range(d['batch']):
+        start_ts = time.time()
         try:
-            if not os.path.exists(wf_config['file']):
-                await context.bot.send_message(chat_id=uid, text=f"❌ Нет файла `{wf_config['file']}`!")
+            if not os.path.exists(cfg['file']):
+                await context.bot.send_message(uid, f"❌ Файл не найден: {cfg['file']}")
                 break
-            with open(wf_config['file'], "r", encoding="utf-8") as f: workflow = json.load(f)
+            
+            with open(cfg['file'], "r", encoding="utf-8") as f: 
+                wf = json.load(f)
 
-            # === 🔥 ВЫЗЫВАЕМ ФИКСЕР ПУТЕЙ ===
-            workflow = fix_workflow_paths(workflow)
+            # 1. FIX PATHS (Linux)
+            wf = fix_paths_for_linux(wf)
 
-            # === 1. LORA MIXER ===
-            id_lora = find_node_id(workflow, ["Power Lora Loader (rgthree)"])
-            if id_lora:
-                node = workflow[id_lora]
-                for slot_idx in range(1, 5):
-                    key = f"lora_{slot_idx}"
-                    if key in node["inputs"]:
-                        user_strength = data['loras'].get(slot_idx, 0.0)
-                        node["inputs"][key]["strength"] = user_strength
-                        node["inputs"][key]["on"] = (user_strength > 0)
+            # 2. LORA MIXER (Node 206)
+            lid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
+            if lid:
+                for s in range(1, 5):
+                    k = f"lora_{s}"
+                    if k in wf[lid]["inputs"]:
+                        v = d['loras'].get(s, 0.0)
+                        wf[lid]["inputs"][k]["strength"] = v
+                        wf[lid]["inputs"][k]["on"] = (v > 0)
 
-            # === 3. SEED ===
-            id_seed = find_node_id(workflow, ["easy seed", "EasySeed"])
-            if id_seed:
-                new_seed = random.randint(1, 10**15)
-                workflow[id_seed]["inputs"]["seed"] = new_seed
+            # 3. SEED
+            sid = find_node_id(wf, ["easy seed", "EasySeed"])
+            if sid: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
             else:
-                id_seed = find_node_id(workflow, ["Seed", "KSampler"])
-                if id_seed and "seed" in workflow[id_seed]["inputs"]:
-                     workflow[id_seed]["inputs"]["seed"] = random.randint(1, 10**15)
+                sid = find_node_id(wf, ["Seed", "KSampler"])
+                if sid: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
-            # === 4. SETUP ===
-            id_image = find_node_id(workflow, ["LoadImage"])
-            id_prompt = find_node_id(workflow, ["String Literal", "CLIPTextEncode", "PrimitiveString"])
+            # 4. DATA
+            iid = find_node_id(wf, ["LoadImage"])
+            tid = find_node_id(wf, ["String Literal", "CLIPTextEncode", "PrimitiveString"])
             
-            if id_image and wf_config['need_photo']: 
-                workflow[id_image]["inputs"]["image"] = data['image']
+            if iid and cfg['need_photo']: 
+                wf[iid]["inputs"]["image"] = d['image']
             
-            if id_prompt:
-                target = "string" if "string" in workflow[id_prompt]["inputs"] else "text"
-                workflow[id_prompt]["inputs"][target] = raw_prompt
+            if tid:
+                tkey = "string" if "string" in wf[tid]["inputs"] else "text"
+                wf[tid]["inputs"][tkey] = prompt_txt
 
-            prompt_data = queue_prompt(workflow)
-            if 'error' in prompt_data:
-                await context.bot.send_message(chat_id=uid, text=f"Comfy Error: {prompt_data['error']}")
+            # 5. EXECUTE
+            res = queue_prompt(wf)
+            if 'error' in res:
+                await context.bot.send_message(uid, f"Comfy Error: {res['error']}")
                 break
-
-            prompt_id = prompt_data["prompt_id"]
             
+            pid = res['prompt_id']
             while True:
-                hist = get_history(prompt_id)
-                if prompt_id in hist: break
+                h = get_history(pid)
+                if pid in h: break
                 time.sleep(1)
             
-            # === RESULT ===
-            duration = time.time() - start_time
-            hist_data = hist[prompt_id]
-            found_img = False
-            final_text_log = ""
-
-            if 'outputs' in hist_data:
-                for nid in hist_data['outputs']:
-                    node_out = hist_data['outputs'][nid]
-                    if 'text' in node_out:
-                        val = node_out['text']
-                        final_text_log = str(val[0]) if isinstance(val, list) else str(val)
-                    
-                    if 'images' in node_out:
-                        for img in node_out['images']:
-                            idata = get_image(img['filename'], img['subfolder'], img['type'])
-                            cap = f"🖼 {i+1}/{count} | ⏱ {duration:.1f}с"
-                            if final_text_log: cap += f"\n\n📝 **Промпт:**\n_{final_text_log[:800]}_"
-                            m = await context.bot.send_photo(chat_id=uid, photo=idata, caption=cap, parse_mode="Markdown")
-                            track_message(uid, m.message_id)
-                            found_img = True
-
-            if not found_img:
-                await context.bot.send_message(chat_id=uid, text=f"⚠️ {i+1}/{count}: Пустой результат ({duration:.1f}с)")
+            # 6. RESULT
+            dur = time.time() - start_ts
+            out = h[pid]['outputs']
+            found = False
+            
+            for nid in out:
+                if 'images' in out[nid]:
+                    for img in out[nid]['images']:
+                        idata = get_view(img['filename'], img['subfolder'], img['type'])
+                        cap = f"🖼 {i+1}/{d['batch']} ({dur:.1f}s)"
+                        m = await context.bot.send_photo(uid, idata, caption=cap)
+                        track_message(uid, m.message_id)
+                        found = True
+            
+            if not found:
+                m = await context.bot.send_message(uid, "⚠️ Генерация пустая")
+                track_message(uid, m.message_id)
 
         except Exception as e:
-            await context.bot.send_message(chat_id=uid, text=f"🔥 Ошибка: {e}")
+            m = await context.bot.send_message(uid, f"Crash: {e}")
+            track_message(uid, m.message_id)
             traceback.print_exc()
 
-    await context.bot.delete_message(chat_id=uid, message_id=status_msg.message_id)
-    fin = await context.bot.send_message(chat_id=uid, text="🏁 Готово!")
+    # Удаляем сообщение "Запуск..."
+    try: await context.bot.delete_message(uid, status_msg.message_id)
+    except: pass
+    
+    fin = await context.bot.send_message(uid, "🏁 Готово!")
     track_message(uid, fin.message_id)
 
 if __name__ == '__main__':
@@ -379,6 +425,6 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    print(f"Бот v4.7 (Anti-Crash) запущен! RunPod ID: {RUNPOD_ID}")
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
+    print(f"Bot v4.8 (Dynamic) Started on {RUNPOD_ID}")
     app.run_polling()
