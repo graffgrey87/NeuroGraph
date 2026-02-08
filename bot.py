@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ (v5.2 HTML Fix)
+# ⚙️ НАСТРОЙКИ (v5.3 Real Prompt)
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID")
@@ -42,7 +42,7 @@ if not BOT_TOKEN:
 # 🛠 ПОМОЩНИКИ
 # ==========================================
 def escape_html(text):
-    """Экранирует символы для HTML (надежнее чем Markdown)"""
+    """Экранирует символы для HTML (чтобы бот не падал)"""
     return html.escape(str(text))
 
 async def check_auth(update: Update):
@@ -202,7 +202,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.2**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.3**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, update.message.message_id)
     track_message(uid, msg.message_id)
 
@@ -257,7 +257,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = get_user_data(uid)
     track_message(uid, update.message.message_id)
 
-    # 1. ВВОД СВОЕГО ЧИСЛА (BATCH)
+    # 1. BATCH CUSTOM
     if d.get('awaiting_custom_batch'):
         if text.isdigit():
             val = int(text)
@@ -270,7 +270,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             track_message(uid, m.message_id)
         return
 
-    # 2. ВВОД ИМЕНИ ДАТАСЕТА (NODE 211)
+    # 2. DATASET NAME
     if d.get('awaiting_dataset_name'):
         d['dataset_name'] = text
         d['awaiting_dataset_name'] = False
@@ -278,7 +278,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         track_message(uid, m.message_id)
         return
 
-    # 3. ВВОД ВЕСА ЛОРЫ
+    # 3. LORA WEIGHT
     if d['awaiting_lora']:
         try:
             val = float(text.replace(",", "."))
@@ -296,7 +296,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             track_message(uid, m.message_id)
             return
 
-    # 4. ОЧИСТКА
+    # 4. CLEAN
     if text == "🗑 ОЧИСТИТЬ":
         count = 0
         for mid in reversed(d['msg_ids']):
@@ -308,7 +308,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clean_msg = await update.message.reply_text(f"🧹 Чисто ({count} удалено).", reply_markup=get_main_kb(uid))
         track_message(uid, clean_msg.message_id)
 
-    # 5. МЕНЮ И КОМАНДЫ
+    # 5. MENUS
     elif text == "🎛 LORA MIXER":
         m = await update.message.reply_text("🎛 Настройка Лор:", reply_markup=get_lora_kb(uid))
         track_message(uid, m.message_id)
@@ -415,14 +415,23 @@ async def run_generation(update, context, uid, manual_prompt=None):
             out = h[pid]['outputs']
             found = False
             
+            # 🔥 ПОИСК РЕАЛЬНОГО ТЕКСТА В ИСТОРИИ (Node 207 и др)
+            real_prompt = prompt_txt # Значение по умолчанию
+            for nid in out:
+                if 'text' in out[nid]:
+                    val = out[nid]['text']
+                    if isinstance(val, list): real_prompt = " ".join([str(x) for x in val])
+                    else: real_prompt = str(val)
+                    break # Берем первый найденный текст (обычно это ShowText)
+
             for nid in out:
                 if 'images' in out[nid]:
                     for img in out[nid]['images']:
                         idata = get_view(img['filename'], img['subfolder'], img['type'])
                         
-                        # 🔥 SPOILER PROMPT HTML FIX
-                        safe_prompt = escape_html(prompt_txt[:900])
-                        cap = f"🖼 {i+1}/{d['batch']} ({dur:.1f}s)\n\n<span class='tg-spoiler'>{safe_prompt}</span>"
+                        # 🔥 ОТОБРАЖЕНИЕ: Без спойлера, реальный текст, HTML экранирование
+                        safe_prompt = escape_html(real_prompt[:900]) # Обрезаем до 900 символов
+                        cap = f"<b>🖼 {i+1}/{d['batch']} ({dur:.1f}s)</b>\n\n{safe_prompt}"
                         
                         m = await context.bot.send_photo(uid, idata, caption=cap, parse_mode="HTML")
                         track_message(uid, m.message_id)
@@ -449,5 +458,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"Bot v5.2 (HTML Fix) Started on {RUNPOD_ID}")
+    print(f"Bot v5.3 (Real Prompt) Started on {RUNPOD_ID}")
     app.run_polling()
