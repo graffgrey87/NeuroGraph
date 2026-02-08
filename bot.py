@@ -1,9 +1,9 @@
-import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys
+import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, sys
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ КОНФИГУРАЦИЯ
+# ⚙️ CONFIG (v4.7 Loaded)
 # ==========================================
 BASE_DIR = "/workspace"
 COMFY_PORT = "3000"
@@ -11,26 +11,27 @@ COMFY_SERVER = f"127.0.0.1:{COMFY_PORT}"
 BOT_TOKEN = os.getenv("TG_TOKEN")
 RUNPOD_ID = os.environ.get("RUNPOD_POD_ID", "127.0.0.1")
 
+# Admin Auth
 raw_ids = os.getenv("ADMIN_ID")
 ALLOWED_USERS = [int(x) for x in raw_ids.split(",") if x.strip().isdigit()] if raw_ids else []
 
 if not BOT_TOKEN:
     sys.exit("❌ TG_TOKEN не найден")
 
-# Пути к файлам
+# Workflows
 WORKFLOWS = {
     "edit": {"file": os.path.join(BASE_DIR, "workflow_api.json"), "name": "🎨 Редакт (Qwen)", "need_photo": True},
     "gen":  {"file": os.path.join(BASE_DIR, "workflow_gen.json"),  "name": "✨ Генерация (Flux)", "need_photo": False}
 }
 
-# Шаблоны промптов
+# Templates
 PROMPT_NORMAL = "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 PROMPT_NSFW = "На фото крупным планом показана высокая девушка с изображения 1, которая __действие_nsfw__ __место__. На ней __наряд_nsfw__. Она __доп_действие_nsfw__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 
 user_data = {}
 
 # ==========================================
-# 🛠 ФУНКЦИИ
+# 🧠 LOGIC
 # ==========================================
 def get_user_data(uid):
     if uid not in user_data:
@@ -46,54 +47,50 @@ def track_msg(uid, msg_id):
     d['msg_ids'].append(msg_id)
     if len(d['msg_ids']) > 50: d['msg_ids'].pop(0)
 
-# --- АГРЕССИВНЫЙ FIXER (V2) ---
+# --- 🔥 BLIND MAPPER v4.7 (Исправление путей) ---
 def smart_fix_models(workflow):
-    print("🔍 SMART FIXER V2: Запуск...")
-    
-    # Карта: Класс Ноды -> (Папка в models, Имя поля ввода)
-    maps = {
-        'VAELoader': ('vae', 'vae_name'), 
-        'CLIPLoader': ('clip', 'clip_name'),
-        'DualCLIPLoader': ('clip', 'clip_name1'), 
-        'CheckpointLoaderSimple': ('checkpoints', 'ckpt_name'),
-        'DiffusionModelLoaderKJ': ('unet', 'model_name'), # Flux часто тут
-        'UNETLoader': ('unet', 'unet_name'),
-        'LoraLoaderModelOnly': ('loras', 'lora_name'),
-        'LoraLoader': ('loras', 'lora_name'),
-        'ControlNetLoader': ('controlnet', 'control_net_name')
-    }
-    
+    print("🔍 v4.7 Mapper: Сканирование...")
     base_models = '/workspace/ComfyUI/models'
-
-    for nid, node in workflow.items():
-        if 'class_type' not in node or 'inputs' not in node: continue
-        
-        ctype = node['class_type']
-        if ctype in maps:
-            subfolder, input_key = maps[ctype]
+    
+    # 1. Кэшируем файлы
+    found = {'unet': [], 'clip': [], 'vae': [], 'checkpoints': []}
+    
+    # UNET (ищем везде)
+    for p in ['unet', 'diffusion_models']:
+        d = os.path.join(base_models, p)
+        if os.path.exists(d):
+            found['unet'].extend([f for f in os.listdir(d) if f.endswith('.safetensors')])
             
-            # Проверяем, есть ли такой input в ноде
-            if input_key in node['inputs']:
-                current_val = node['inputs'][input_key]
-                target_dir = os.path.join(base_models, subfolder)
+    # CLIP & VAE
+    for t in ['clip', 'vae']:
+        d = os.path.join(base_models, t)
+        if os.path.exists(d):
+            found[t] = [f for f in os.listdir(d) if f.endswith('.safetensors')]
+
+    # 2. Подмена
+    for nid, node in workflow.items():
+        if 'inputs' not in node: continue
+        inp = node['inputs']
+        
+        # Фикс UNET / Checkpoint
+        for k in ['model_name', 'unet_name', 'ckpt_name']:
+            if k in inp and found['unet']:
+                # Если имя содержит "put_" -> меняем
+                if "put_" in inp[k] or inp[k] not in found['unet']:
+                    print(f"🔧 FIX UNET ({nid}): {inp[k]} -> {found['unet'][0]}")
+                    inp[k] = found['unet'][0]
+        
+        # Фикс CLIP
+        if 'clip_name' in inp and found['clip']:
+            if "put_" in inp['clip_name'] or inp['clip_name'] not in found['clip']:
+                print(f"🔧 FIX CLIP ({nid}): {inp['clip_name']} -> {found['clip'][0]}")
+                inp['clip_name'] = found['clip'][0]
                 
-                # Если папка существует
-                if os.path.exists(target_dir):
-                    # Получаем список всех файлов
-                    files = [f for f in os.listdir(target_dir) if os.path.isfile(os.path.join(target_dir, f)) and not f.startswith('.')]
-                    
-                    if not files:
-                        print(f"⚠️ Папка пуста: {subfolder}")
-                        continue
-                    
-                    # Если текущее значение НЕ в списке файлов -> БЕРЕМ ПЕРВЫЙ ПОПАВШИЙСЯ
-                    if current_val not in files:
-                        print(f"🔧 FIXER [{ctype}]: Заменяю '{current_val}' -> '{files[0]}'")
-                        node['inputs'][input_key] = files[0]
-                    else:
-                        print(f"✅ OK [{ctype}]: Файл '{current_val}' найден.")
-                else:
-                     print(f"⚠️ Папка не найдена: {target_dir}")
+        # Фикс VAE
+        if 'vae_name' in inp and found['vae']:
+            if "put_" in inp['vae_name'] or inp['vae_name'] not in found['vae']:
+                print(f"🔧 FIX VAE ({nid}): {inp['vae_name']} -> {found['vae'][0]}")
+                inp['vae_name'] = found['vae'][0]
 
     return workflow
 
@@ -140,11 +137,12 @@ def get_view(fname, sub, type):
     q = urllib.parse.urlencode({"filename": fname, "subfolder": sub, "type": type})
     with urllib.request.urlopen(f"http://{COMFY_SERVER}/view?{q}") as r: return r.read()
 
-# --- KB ---
+# --- GUI ---
 def get_main_kb(uid):
     d = get_user_data(uid)
+    wf_name = WORKFLOWS[d['wf']]['name']
     kb = [[KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
-          [KeyboardButton(f"🔄 WF: {WORKFLOWS[d['wf']]['name']}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
+          [KeyboardButton(f"🔄 WF: {wf_name}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
           [KeyboardButton(f"Режим: {d['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")]]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -164,7 +162,7 @@ def get_lora_kb(uid):
 async def start(update, context):
     uid = update.effective_user.id
     if uid not in ALLOWED_USERS: return
-    msg = await update.message.reply_text(f"🎛 **NeuroGraph v4.7** (Port {COMFY_PORT})", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🎛 **NeuroGraph v4.7** (Mapper Active)\nPort: {COMFY_PORT}", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_msg(uid, update.message.message_id)
     track_msg(uid, msg.message_id)
 
@@ -264,7 +262,7 @@ async def run_generation(update, context, uid, manual_prompt=None):
         try:
             with open(cfg['file'], "r") as f: wf = json.load(f)
             
-            # 1. FIX MODEL PATHS (Агрессивный)
+            # 1. FIX MODEL PATHS (v4.7 Mapper)
             wf = smart_fix_models(wf)
 
             # 2. LORA
