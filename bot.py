@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ (v4.9 Stable Links + ClientID)
+# ⚙️ НАСТРОЙКИ (v5.0 Full Features)
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID")
@@ -13,7 +13,7 @@ COMFY_PORT = "3000"
 RUNPOD_ID = os.environ.get("RUNPOD_POD_ID", "127.0.0.1")
 COMFY_SERVER = f"127.0.0.1:{COMFY_PORT}"
 BASE_DIR = "/workspace"
-CLIENT_ID = str(uuid.uuid4()) # Уникальный ID клиента для API
+CLIENT_ID = str(uuid.uuid4())
 
 # Настройки режимов
 WORKFLOWS = {
@@ -50,9 +50,16 @@ async def check_auth(update: Update):
 def get_user_data(uid):
     if uid not in user_data:
         user_data[uid] = {
-            'image': None, 'mode': 'normal', 'wf': 'edit', 'batch': 1, 'msg_ids': [],
+            'image': None, 
+            'mode': 'normal', 
+            'wf': 'edit', 
+            'batch': 1, 
+            'dataset_name': 'Batch', # Имя по умолчанию
+            'msg_ids': [],
             'loras': {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}, 
-            'awaiting_lora': None 
+            'awaiting_lora': None,
+            'awaiting_custom_batch': False, # Флаг ожидания ввода числа
+            'awaiting_dataset_name': False  # Флаг ожидания имени
         }
     return user_data[uid]
 
@@ -65,7 +72,7 @@ def track_message(user_id, message_id):
         data['msg_ids'].pop(0)
 
 def fix_paths_for_linux(workflow):
-    """Меняет \ на /"""
+    """Меняет \ на / (Linux Fix)"""
     for nid, node in workflow.items():
         if "inputs" in node:
             for key, val in node["inputs"].items():
@@ -121,7 +128,6 @@ def upload_image(file_bytes, file_name):
     except: return None
 
 def queue_prompt(prompt_workflow):
-    # 🔥 FIX: Добавлен client_id для корректной работы API
     p = {"prompt": prompt_workflow, "client_id": CLIENT_ID}
     data = json.dumps(p).encode('utf-8')
     req = urllib.request.Request(f"http://{COMFY_SERVER}/prompt", data=data)
@@ -148,7 +154,7 @@ def get_main_kb(uid):
         [KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
         [KeyboardButton(f"🔄 WF: {wf_name}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
         [KeyboardButton(f"{mode_icon} Режим: {d['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
-        [KeyboardButton("🌐 Ссылки & WebUI")]
+        [KeyboardButton(f"🏷 Имя сета: {d['dataset_name']}"), KeyboardButton("🌐 Ссылки & WebUI")]
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -166,7 +172,6 @@ def get_lora_kb(uid):
 
 def get_links_kb():
     base = f"https://{RUNPOD_ID}"
-    # 🔥 FIX: Вернул все ссылки
     url_comfy = f"{base}-{COMFY_PORT}.proxy.runpod.net/"
     url_gallery = f"{base}-8083.proxy.runpod.net/"
     url_down = f"{base}-8081.proxy.runpod.net/"
@@ -176,14 +181,16 @@ def get_links_kb():
     kb = [
         [InlineKeyboardButton("🎨 ComfyUI Web (3000)", url=url_comfy)],
         [InlineKeyboardButton("🖼 Галерея (8083)", url=url_gallery), InlineKeyboardButton("💾 Files (8081)", url=url_down)],
-        [InlineKeyboardButton("🧠 CivitAI (8082)", url=url_civit), InlineKeyboardButton("📂 Jupyter (8888)", url=url_jupyter)]
+        [InlineKeyboardButton("🧠 CivitAI (8082)", url=url_civit), InlineKeyboardButton("📂 Jupyter (8888)", url=url_jupyter)],
+        [InlineKeyboardButton("❌ Закрыть", callback_data="close_links")]
     ]
     return InlineKeyboardMarkup(kb)
 
 def get_batch_kb():
     kb = [
         [InlineKeyboardButton("1", callback_data="batch_1"), InlineKeyboardButton("2", callback_data="batch_2"), InlineKeyboardButton("3", callback_data="batch_3")],
-        [InlineKeyboardButton("5", callback_data="batch_5"), InlineKeyboardButton("10", callback_data="batch_10")]
+        [InlineKeyboardButton("5", callback_data="batch_5"), InlineKeyboardButton("10", callback_data="batch_10")],
+        [InlineKeyboardButton("⌨️ Свое число", callback_data="batch_custom")]
     ]
     return InlineKeyboardMarkup(kb)
 
@@ -191,7 +198,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🎛 **NeuroGraph v4.9**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.0**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, update.message.message_id)
     track_message(uid, msg.message_id)
 
@@ -220,11 +227,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data.startswith("batch_"):
-        count = int(query.data.split("_")[1])
-        d['batch'] = count
-        await query.message.edit_text(f"🔢 Batch: **{count}**", parse_mode="Markdown")
-        m = await context.bot.send_message(chat_id=uid, text="Меню обновлено", reply_markup=get_main_kb(uid))
-        track_message(uid, m.message_id)
+        if query.data == "batch_custom":
+            d['awaiting_custom_batch'] = True
+            await query.message.edit_text("⌨️ **Введите число** (например 50):", parse_mode="Markdown")
+        else:
+            count = int(query.data.split("_")[1])
+            d['batch'] = count
+            await query.message.edit_text(f"🔢 Batch: **{count}**", parse_mode="Markdown")
+            m = await context.bot.send_message(chat_id=uid, text="Меню обновлено", reply_markup=get_main_kb(uid))
+            track_message(uid, m.message_id)
 
     elif query.data.startswith("edit_lora_"):
         slot = int(query.data.split("_")[2])
@@ -232,7 +243,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         names = get_lora_names(uid)
         await query.message.edit_text(f"✍️ **{names[slot]}**\nВведите вес (0.1 - 1.0) или 0:", parse_mode="Markdown")
     
-    elif query.data == "close_lora":
+    elif query.data == "close_lora" or query.data == "close_links":
         await query.message.delete()
 
 async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -242,7 +253,28 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = get_user_data(uid)
     track_message(uid, update.message.message_id)
 
-    # 1. Вес Лоры
+    # 1. ВВОД СВОЕГО ЧИСЛА (BATCH)
+    if d.get('awaiting_custom_batch'):
+        if text.isdigit():
+            val = int(text)
+            d['batch'] = val
+            d['awaiting_custom_batch'] = False
+            m = await update.message.reply_text(f"🔢 Установлен Batch: **{val}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+            track_message(uid, m.message_id)
+        else:
+            m = await update.message.reply_text("⚠️ Введите целое число!")
+            track_message(uid, m.message_id)
+        return
+
+    # 2. ВВОД ИМЕНИ ДАТАСЕТА (NODE 211)
+    if d.get('awaiting_dataset_name'):
+        d['dataset_name'] = text
+        d['awaiting_dataset_name'] = False
+        m = await update.message.reply_text(f"🏷 Имя сета: **{text}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+        track_message(uid, m.message_id)
+        return
+
+    # 3. ВВОД ВЕСА ЛОРЫ
     if d['awaiting_lora']:
         try:
             val = float(text.replace(",", "."))
@@ -260,7 +292,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             track_message(uid, m.message_id)
             return
 
-    # 2. Очистка
+    # 4. ОЧИСТКА
     if text == "🗑 ОЧИСТИТЬ":
         count = 0
         for mid in reversed(d['msg_ids']):
@@ -269,10 +301,10 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 count += 1
             except: pass
         d['msg_ids'] = []
-        clean_msg = await update.message.reply_text(f"🧹 Чисто.", reply_markup=get_main_kb(uid))
+        clean_msg = await update.message.reply_text(f"🧹 Чисто ({count} удалено).", reply_markup=get_main_kb(uid))
         track_message(uid, clean_msg.message_id)
 
-    # 3. Меню и ссылки
+    # 5. МЕНЮ И КОМАНДЫ
     elif text == "🎛 LORA MIXER":
         m = await update.message.reply_text("🎛 Настройка Лор:", reply_markup=get_lora_kb(uid))
         track_message(uid, m.message_id)
@@ -283,6 +315,11 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif text.startswith("🔢"):
         m = await update.message.reply_text("Количество:", reply_markup=get_batch_kb())
+        track_message(uid, m.message_id)
+    
+    elif text.startswith("🏷"):
+        d['awaiting_dataset_name'] = True
+        m = await update.message.reply_text("📝 Введите новое имя для файлов (префикс):")
         track_message(uid, m.message_id)
     
     elif text.startswith("🔄"):
@@ -314,7 +351,7 @@ async def run_generation(update, context, uid, manual_prompt=None):
 
     prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
     
-    status_msg = await update.message.reply_text(f"🚀 Запуск {d['batch']} шт...")
+    status_msg = await update.message.reply_text(f"🚀 Запуск {d['batch']} шт...\n📂 Set: {d['dataset_name']}")
     track_message(uid, status_msg.message_id)
 
     for i in range(d['batch']):
@@ -326,8 +363,15 @@ async def run_generation(update, context, uid, manual_prompt=None):
             
             with open(cfg['file'], "r", encoding="utf-8") as f: wf = json.load(f)
 
+            # === AUTO-FIX ===
             wf = fix_paths_for_linux(wf)
 
+            # === SET NAME (Node 211) ===
+            # Проверяем, есть ли нода 211 и меняем ей имя
+            if "211" in wf and "inputs" in wf["211"]:
+                wf["211"]["inputs"]["value"] = d['dataset_name']
+
+            # === LORA MIXER ===
             lid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
             if lid:
                 for s in range(1, 5):
@@ -337,12 +381,14 @@ async def run_generation(update, context, uid, manual_prompt=None):
                         wf[lid]["inputs"][k]["strength"] = v
                         wf[lid]["inputs"][k]["on"] = (v > 0)
 
+            # === SEED ===
             sid = find_node_id(wf, ["easy seed", "EasySeed"])
             if sid: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
             else:
                 sid = find_node_id(wf, ["Seed", "KSampler"])
                 if sid: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
+            # === PROMPT & IMAGE ===
             iid = find_node_id(wf, ["LoadImage"])
             tid = find_node_id(wf, ["String Literal", "CLIPTextEncode", "PrimitiveString"])
             
@@ -370,8 +416,9 @@ async def run_generation(update, context, uid, manual_prompt=None):
                 if 'images' in out[nid]:
                     for img in out[nid]['images']:
                         idata = get_view(img['filename'], img['subfolder'], img['type'])
-                        cap = f"🖼 {i+1}/{d['batch']} ({dur:.1f}s)"
-                        m = await context.bot.send_photo(uid, idata, caption=cap)
+                        # 🔥 SPOILER PROMPT
+                        cap = f"🖼 {i+1}/{d['batch']} ({dur:.1f}s)\n\n||{prompt_txt[:900]}||"
+                        m = await context.bot.send_photo(uid, idata, caption=cap, parse_mode="MarkdownV2")
                         track_message(uid, m.message_id)
                         found = True
             
@@ -396,5 +443,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"Bot v4.9 (Full Links) Started on {RUNPOD_ID}")
+    print(f"Bot v5.0 (Full Features) Started on {RUNPOD_ID}")
     app.run_polling()
