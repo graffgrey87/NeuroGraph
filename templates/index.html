@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flux Settings</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #212121; color: #fff; padding: 16px; margin: 0; }
+        h2 { margin-top: 0; color: #0088cc; }
+        .card { background: #2f2f2f; padding: 15px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        label { display: block; margin-bottom: 6px; color: #aaa; font-size: 13px; font-weight: bold; }
+        select, input[type="text"] { width: 100%; padding: 12px; background: #3d3d3d; border: 1px solid #555; color: white; border-radius: 8px; font-size: 16px; box-sizing: border-box; appearance: none; margin-bottom: 10px; }
+        
+        /* Слайдер веса */
+        .range-container { display: flex; align-items: center; justify-content: space-between; }
+        input[type="range"] { flex-grow: 1; margin-right: 10px; }
+        .val-display { background: #444; padding: 4px 8px; border-radius: 6px; font-size: 14px; min-width: 35px; text-align: center; }
+
+        /* Кнопка */
+        button { width: 100%; padding: 16px; background: #0088cc; color: white; border: none; border-radius: 12px; font-size: 17px; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 10px; }
+        button:active { transform: scale(0.98); background: #0077b5; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <label>🤖 Базовая Модель (Flux)</label>
+        <select id="checkpoint">
+            {% for ckpt in checkpoints %}
+            <option value="{{ ckpt }}">{{ ckpt }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="card">
+        <label>📷 Ракурс (Camera Rotation)</label>
+        <select id="cam_rot">
+            <option value="0">Off (Не менять)</option>
+            <option value="1">Front (Анфас)</option>
+            <option value="2">Front 3/4</option>
+            <option value="3" selected>Side (Профиль)</option>
+            <option value="4">Rear 3/4</option>
+            <option value="5">Back (Спина)</option>
+        </select>
+
+        <label>📐 Угол (Angle)</label>
+        <select id="cam_angle">
+            <option value="0">Off</option>
+            <option value="1">Very Low (Снизу)</option>
+            <option value="2">Low</option>
+            <option value="3" selected>Straight (Прямо)</option>
+            <option value="4">High (Сверху)</option>
+        </select>
+
+        <label>🔭 Дистанция</label>
+        <select id="cam_dist">
+            <option value="0">Off</option>
+            <option value="1">Close-Up (Крупный)</option>
+            <option value="2">Half-Body (По пояс)</option>
+            <option value="3" selected>Full-Body (Полный рост)</option>
+        </select>
+    </div>
+
+    <div class="card">
+        <label>🧬 Выбрать LoRA</label>
+        <select id="lora_1">
+            <option value="None">-- Не использовать --</option>
+            {% for lora in loras %}
+            <option value="{{ lora }}">{{ lora }}</option>
+            {% endfor %}
+        </select>
+        
+        <label>Вес LoRA: <span id="val_1" class="val-display">0.8</span></label>
+        <div class="range-container">
+            <input type="range" id="w_1" min="0" max="1.5" step="0.05" value="0.8" oninput="document.getElementById('val_1').innerText = this.value">
+        </div>
+    </div>
+
+    <button onclick="sendData()">🚀 ОТПРАВИТЬ ЗАДАЧУ</button>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand(); // Раскрыть на весь экран
+
+        // Главная функция отправки
+        function sendData() {
+            let data = {
+                checkpoint: document.getElementById("checkpoint").value,
+                cam_rot: document.getElementById("cam_rot").value,
+                cam_angle: document.getElementById("cam_angle").value,
+                cam_dist: document.getElementById("cam_dist").value,
+                lora_1: document.getElementById("lora_1").value,
+                weight_1: document.getElementById("w_1").value
+            };
+            // Отправляем JSON строку боту
+            tg.sendData(JSON.stringify(data)); 
+        }
+    </script>
+</body>
+</html>
