@@ -1,9 +1,9 @@
-import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
+import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ (v5.3 Real Prompt)
+# ⚙️ НАСТРОЙКИ (v5.5 Unified)
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID")
@@ -15,6 +15,9 @@ COMFY_SERVER = f"127.0.0.1:{COMFY_PORT}"
 BASE_DIR = "/workspace"
 CLIENT_ID = str(uuid.uuid4())
 
+# URL для WebApp (Автоматический)
+WEBAPP_URL = f"https://{RUNPOD_ID}-8084.proxy.runpod.net"
+
 # Настройки режимов
 WORKFLOWS = {
     "edit": {
@@ -24,7 +27,12 @@ WORKFLOWS = {
     },
     "gen": {
         "file": os.path.join(BASE_DIR, "workflow_gen.json"),  
-        "name": "✨ Генерация (Flux)", 
+        "name": "✨ Генерация (Old)", 
+        "need_photo": False
+    },
+    "flux_new": {
+        "file": os.path.join(BASE_DIR, "TI2I_Flux2_Klein.json"),
+        "name": "🚀 Flux 2 Klein",
         "need_photo": False
     }
 }
@@ -42,7 +50,6 @@ if not BOT_TOKEN:
 # 🛠 ПОМОЩНИКИ
 # ==========================================
 def escape_html(text):
-    """Экранирует символы для HTML (чтобы бот не падал)"""
     return html.escape(str(text))
 
 async def check_auth(update: Update):
@@ -68,7 +75,6 @@ def get_user_data(uid):
     return user_data[uid]
 
 def track_message(user_id, message_id):
-    """Сохраняет ID для очистки"""
     data = get_user_data(user_id)
     if message_id not in data['msg_ids']:
         data['msg_ids'].append(message_id)
@@ -76,7 +82,6 @@ def track_message(user_id, message_id):
         data['msg_ids'].pop(0)
 
 def fix_paths_for_linux(workflow):
-    """Меняет \ на / (Linux Fix)"""
     for nid, node in workflow.items():
         if "inputs" in node:
             for key, val in node["inputs"].items():
@@ -90,7 +95,6 @@ def find_node_id(workflow, class_type_list):
             if node_data.get("class_type") in class_type_list: return node_id
     return None
 
-# --- 🔥 ПАРСЕР ИМЕН ЛОР ---
 def get_lora_names(uid):
     names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
     data = get_user_data(uid)
@@ -149,12 +153,66 @@ def get_view(filename, subfolder, folder_type):
     with urllib.request.urlopen(f"http://{COMFY_SERVER}/view?{url_values}") as response:
         return response.read()
 
+# --- ЛОГИКА ОЖИДАНИЯ (SHARED) ---
+async def monitor_generation(context, uid, prompt_id, batch_size, start_ts, status_msg_id):
+    """Общая функция ожидания результата для всех режимов"""
+    d = get_user_data(uid)
+    
+    try:
+        while True:
+            h = get_history(prompt_id)
+            if prompt_id in h: break
+            await asyncio.sleep(1) # Async sleep лучше чем time.sleep
+        
+        dur = time.time() - start_ts
+        out = h[prompt_id]['outputs']
+        found = False
+        
+        # Поиск промпта
+        real_prompt = "Result"
+        for nid in out:
+            if 'text' in out[nid]:
+                val = out[nid]['text']
+                if isinstance(val, list): real_prompt = " ".join([str(x) for x in val])
+                else: real_prompt = str(val)
+                break
+
+        for nid in out:
+            if 'images' in out[nid]:
+                for i, img in enumerate(out[nid]['images']):
+                    idata = get_view(img['filename'], img['subfolder'], img['type'])
+                    
+                    safe_prompt = escape_html(real_prompt[:900])
+                    cap = f"<b>🖼 {i+1}/{batch_size} ({dur:.1f}s)</b>\n\n{safe_prompt}"
+                    
+                    m = await context.bot.send_photo(uid, idata, caption=cap, parse_mode="HTML")
+                    track_message(uid, m.message_id)
+                    found = True
+        
+        if not found:
+            m = await context.bot.send_message(uid, "⚠️ ComfyUI завершил работу, но изображений не вернул.")
+            track_message(uid, m.message_id)
+
+    except Exception as e:
+        m = await context.bot.send_message(uid, f"Crash: {e}")
+        track_message(uid, m.message_id)
+        traceback.print_exc()
+
+    try: await context.bot.delete_message(uid, status_msg_id)
+    except: pass
+    
+    fin = await context.bot.send_message(uid, "🏁 Готово!")
+    track_message(uid, fin.message_id)
+
+
 # --- КЛАВИАТУРЫ ---
 def get_main_kb(uid):
     d = get_user_data(uid)
     wf_name = WORKFLOWS[d['wf']]['name']
     mode_icon = "😇" if d['mode'] == 'normal' else "😈"
+    
     kb = [
+        [KeyboardButton("⚙️ Flux Настройки", web_app=WebAppInfo(url=WEBAPP_URL))],
         [KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
         [KeyboardButton(f"🔄 WF: {wf_name}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
         [KeyboardButton(f"{mode_icon} Режим: {d['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
@@ -202,7 +260,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.3**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.5 (Unified)**\nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, update.message.message_id)
     track_message(uid, msg.message_id)
 
@@ -249,6 +307,62 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif query.data == "close_lora" or query.data == "close_links":
         await query.message.delete()
+
+# --- 🔥 НОВЫЙ ОБРАБОТЧИК: WebApp Data (Flux) ---
+async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_auth(update): return
+    uid = update.effective_user.id
+    
+    try:
+        data = json.loads(update.effective_message.web_app_data.data)
+        
+        # 1. Загружаем Workflow Flux
+        cfg_flux = WORKFLOWS["flux_new"]
+        if not os.path.exists(cfg_flux['file']):
+            await update.message.reply_text(f"❌ JSON Файла не существует: {cfg_flux['file']}")
+            return
+
+        with open(cfg_flux['file'], "r", encoding="utf-8") as f: wf = json.load(f)
+        
+        # 2. Инъекция параметров из WebApp
+        # Checkpoint (Node 116:129)
+        if "checkpoint" in data:
+            wf["116:129"]["inputs"]["model_name"] = data["checkpoint"]
+        
+        # Camera Settings
+        if "cam_rot" in data: wf["146"]["inputs"]["value"] = int(data["cam_rot"])
+        if "cam_angle" in data: wf["144"]["inputs"]["value"] = int(data["cam_angle"])
+        if "cam_dist" in data: wf["151"]["inputs"]["value"] = int(data["cam_dist"])
+
+        # Lora (Node 153)
+        if data.get("lora_1") and data["lora_1"] != "None":
+            wf["153"]["inputs"]["lora_1"] = {
+                "on": True,
+                "lora": data["lora_1"],
+                "strength": float(data["weight_1"])
+            }
+
+        # Seed (Ищем easy seed)
+        sid = find_node_id(wf, ["easy seed", "EasySeed"])
+        if sid: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
+
+        # 3. Запуск
+        status_msg = await update.message.reply_text("⚙️ Flux: Данные приняты, запускаю...")
+        track_message(uid, status_msg.message_id)
+
+        res = queue_prompt(wf)
+        if 'error' in res:
+            await status_msg.edit_text(f"❌ Comfy Error: {res['error']}")
+            return
+
+        # 4. Ожидание и отправка (используем общую функцию)
+        start_ts = time.time()
+        await monitor_generation(context, uid, res['prompt_id'], 1, start_ts, status_msg.message_id)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка обработки WebApp: {e}")
+        traceback.print_exc()
+
 
 async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
@@ -405,58 +519,22 @@ async def run_generation(update, context, uid, manual_prompt=None):
                 await context.bot.send_message(uid, f"Comfy Error: {res['error']}")
                 break
             
-            pid = res['prompt_id']
-            while True:
-                h = get_history(pid)
-                if pid in h: break
-                time.sleep(1)
-            
-            dur = time.time() - start_ts
-            out = h[pid]['outputs']
-            found = False
-            
-            # 🔥 ПОИСК РЕАЛЬНОГО ТЕКСТА В ИСТОРИИ (Node 207 и др)
-            real_prompt = prompt_txt # Значение по умолчанию
-            for nid in out:
-                if 'text' in out[nid]:
-                    val = out[nid]['text']
-                    if isinstance(val, list): real_prompt = " ".join([str(x) for x in val])
-                    else: real_prompt = str(val)
-                    break # Берем первый найденный текст (обычно это ShowText)
-
-            for nid in out:
-                if 'images' in out[nid]:
-                    for img in out[nid]['images']:
-                        idata = get_view(img['filename'], img['subfolder'], img['type'])
-                        
-                        # 🔥 ОТОБРАЖЕНИЕ: Без спойлера, реальный текст, HTML экранирование
-                        safe_prompt = escape_html(real_prompt[:900]) # Обрезаем до 900 символов
-                        cap = f"<b>🖼 {i+1}/{d['batch']} ({dur:.1f}s)</b>\n\n{safe_prompt}"
-                        
-                        m = await context.bot.send_photo(uid, idata, caption=cap, parse_mode="HTML")
-                        track_message(uid, m.message_id)
-                        found = True
-            
-            if not found:
-                m = await context.bot.send_message(uid, "⚠️ Пусто")
-                track_message(uid, m.message_id)
+            # Используем общую функцию мониторинга
+            await monitor_generation(context, uid, res['prompt_id'], d['batch'], start_ts, status_msg.message_id)
 
         except Exception as e:
             m = await context.bot.send_message(uid, f"Crash: {e}")
             track_message(uid, m.message_id)
             traceback.print_exc()
 
-    try: await context.bot.delete_message(uid, status_msg.message_id)
-    except: pass
-    
-    fin = await context.bot.send_message(uid, "🏁 Готово!")
-    track_message(uid, fin.message_id)
-
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
+    # Обработчик WebApp (Новый)
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
+    # Старый обработчик текста
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"Bot v5.3 (Real Prompt) Started on {RUNPOD_ID}")
+    print(f"Bot v5.5 (Unified) Started on {RUNPOD_ID}")
     app.run_polling()
