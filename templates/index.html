@@ -2,99 +2,212 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Flux Settings</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { font-family: -apple-system, sans-serif; background: #212121; color: #fff; padding: 16px; margin: 0; }
-        h2 { margin-top: 0; color: #0088cc; }
-        .card { background: #2f2f2f; padding: 15px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        label { display: block; margin-bottom: 6px; color: #aaa; font-size: 13px; font-weight: bold; }
-        select, input[type="text"] { width: 100%; padding: 12px; background: #3d3d3d; border: 1px solid #555; color: white; border-radius: 8px; font-size: 16px; box-sizing: border-box; appearance: none; margin-bottom: 10px; }
-        
-        /* Слайдер веса */
-        .range-container { display: flex; align-items: center; justify-content: space-between; }
-        input[type="range"] { flex-grow: 1; margin-right: 10px; }
-        .val-display { background: #444; padding: 4px 8px; border-radius: 6px; font-size: 14px; min-width: 35px; text-align: center; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color, #1c1c1e);
+            color: var(--tg-theme-text-color, #ffffff);
+            margin: 0;
+            padding: 16px;
+            box-sizing: border-box;
+        }
 
-        /* Кнопка */
-        button { width: 100%; padding: 16px; background: #0088cc; color: white; border: none; border-radius: 12px; font-size: 17px; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 10px; }
-        button:active { transform: scale(0.98); background: #0077b5; }
+        h2 {
+            text-align: center;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 20px;
+            color: var(--tg-theme-text-color, #ffffff);
+        }
+
+        .section {
+            background-color: var(--tg-theme-secondary-bg-color, #2c2c2e);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--tg-theme-hint-color, #8e8e93);
+        }
+
+        select {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--tg-theme-bg-color);
+            background-color: var(--tg-theme-bg-color, #000);
+            color: var(--tg-theme-text-color, #fff);
+            font-size: 16px;
+            appearance: none; /* Убирает стандартную стрелку браузера */
+            outline: none;
+        }
+
+        /* Ползунок веса */
+        .slider-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+        
+        input[type="range"] {
+            flex-grow: 1;
+            margin-right: 15px;
+            accent-color: var(--tg-theme-button-color, #3390ec);
+        }
+
+        .value-badge {
+            background-color: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 30px;
+            text-align: center;
+        }
+
+        /* Главная кнопка */
+        #main-btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            background-color: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            font-size: 17px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: opacity 0.2s;
+        }
+
+        #main-btn:active {
+            opacity: 0.8;
+        }
+
+        /* Анимация загрузки */
+        .loader {
+            text-align: center;
+            color: var(--tg-theme-hint-color);
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
-    <div class="card">
-        <label>🤖 Базовая Модель (Flux)</label>
+
+    <h2>⚙️ Flux Настройки</h2>
+
+    <div class="section">
+        <label for="checkpoint">Checkpoint (Модель)</label>
         <select id="checkpoint">
-            {% for ckpt in checkpoints %}
-            <option value="{{ ckpt }}">{{ ckpt }}</option>
-            {% endfor %}
+            <option value="" disabled selected>🔄 Загрузка списка...</option>
         </select>
     </div>
 
-    <div class="card">
-        <label>📷 Ракурс (Camera Rotation)</label>
-        <select id="cam_rot">
-            <option value="0">Off (Не менять)</option>
-            <option value="1">Front (Анфас)</option>
-            <option value="2">Front 3/4</option>
-            <option value="3" selected>Side (Профиль)</option>
-            <option value="4">Rear 3/4</option>
-            <option value="5">Back (Спина)</option>
-        </select>
-
-        <label>📐 Угол (Angle)</label>
-        <select id="cam_angle">
-            <option value="0">Off</option>
-            <option value="1">Very Low (Снизу)</option>
-            <option value="2">Low</option>
-            <option value="3" selected>Straight (Прямо)</option>
-            <option value="4">High (Сверху)</option>
-        </select>
-
-        <label>🔭 Дистанция</label>
-        <select id="cam_dist">
-            <option value="0">Off</option>
-            <option value="1">Close-Up (Крупный)</option>
-            <option value="2">Half-Body (По пояс)</option>
-            <option value="3" selected>Full-Body (Полный рост)</option>
-        </select>
-    </div>
-
-    <div class="card">
-        <label>🧬 Выбрать LoRA</label>
+    <div class="section">
+        <label for="lora_1">LoRA (Стиль/Персонаж)</label>
         <select id="lora_1">
-            <option value="None">-- Не использовать --</option>
-            {% for lora in loras %}
-            <option value="{{ lora }}">{{ lora }}</option>
-            {% endfor %}
+            <option value="None">Loading...</option>
         </select>
-        
-        <label>Вес LoRA: <span id="val_1" class="val-display">0.8</span></label>
-        <div class="range-container">
-            <input type="range" id="w_1" min="0" max="1.5" step="0.05" value="0.8" oninput="document.getElementById('val_1').innerText = this.value">
+
+        <div class="slider-row">
+            <input type="range" id="weight_1" min="0" max="2" step="0.1" value="1.0" oninput="updateVal('val_1', this.value)">
+            <span id="val_1" class="value-badge">1.0</span>
         </div>
     </div>
 
-    <button onclick="sendData()">🚀 ОТПРАВИТЬ ЗАДАЧУ</button>
+    <button id="main-btn" onclick="sendData()">ГЕНЕРИРОВАТЬ</button>
 
     <script>
+        // Инициализация Telegram WebApp
         let tg = window.Telegram.WebApp;
         tg.expand(); // Раскрыть на весь экран
 
-        // Главная функция отправки
-        function sendData() {
-            let data = {
-                checkpoint: document.getElementById("checkpoint").value,
-                cam_rot: document.getElementById("cam_rot").value,
-                cam_angle: document.getElementById("cam_angle").value,
-                cam_dist: document.getElementById("cam_dist").value,
-                lora_1: document.getElementById("lora_1").value,
-                weight_1: document.getElementById("w_1").value
-            };
-            // Отправляем JSON строку боту
-            tg.sendData(JSON.stringify(data)); 
+        // Обновление цифр ползунка
+        function updateVal(id, val) {
+            document.getElementById(id).innerText = val;
         }
+
+        // Загрузка данных с нашего сервера Python
+        async function loadData() {
+            try {
+                // 1. Загружаем Checkpoints
+                let resCkpt = await fetch('/api/checkpoints');
+                let dataCkpt = await resCkpt.json();
+                
+                let ckptSelect = document.getElementById('checkpoint');
+                ckptSelect.innerHTML = ""; // Очистить "Загрузка..."
+
+                if (dataCkpt.checkpoints && dataCkpt.checkpoints.length > 0) {
+                    dataCkpt.checkpoints.forEach(model => {
+                        let opt = document.createElement('option');
+                        opt.value = model;
+                        opt.innerText = model;
+                        // Автовыбор Flux, если есть в названии
+                        if (model.toLowerCase().includes("flux") || model.toLowerCase().includes("klein")) {
+                            opt.selected = true;
+                        }
+                        ckptSelect.appendChild(opt);
+                    });
+                } else {
+                    let opt = document.createElement('option');
+                    opt.innerText = "❌ Модели не найдены";
+                    ckptSelect.appendChild(opt);
+                }
+
+                // 2. Загружаем LoRAs
+                let resLora = await fetch('/api/loras');
+                let dataLora = await resLora.json();
+                
+                let loraSelect = document.getElementById('lora_1');
+                loraSelect.innerHTML = '<option value="None">⛔ Без Лоры (None)</option>';
+
+                if (dataLora.loras && dataLora.loras.length > 0) {
+                    dataLora.loras.forEach(lora => {
+                        let opt = document.createElement('option');
+                        opt.value = lora;
+                        opt.innerText = lora;
+                        loraSelect.appendChild(opt);
+                    });
+                }
+
+            } catch (error) {
+                alert("Ошибка соединения с сервером: " + error);
+            }
+        }
+
+        // Отправка данных боту
+        function sendData() {
+            let checkpoint = document.getElementById('checkpoint').value;
+            let lora_1 = document.getElementById('lora_1').value;
+            let weight_1 = document.getElementById('weight_1').value;
+
+            if (!checkpoint || checkpoint.includes("Модели не найдены")) {
+                tg.showPopup({title: 'Ошибка', message: 'Выберите модель!'});
+                return;
+            }
+
+            let data = {
+                checkpoint: checkpoint,
+                lora_1: lora_1,
+                weight_1: weight_1
+            };
+
+            // Отправляем JSON боту
+            tg.sendData(JSON.stringify(data));
+        }
+
+        // Запускаем при загрузке страницы
+        loadData();
+
     </script>
 </body>
 </html>
