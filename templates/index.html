@@ -3,71 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Flux Pro v6.1</title>
+    <title>Flux Pro Control</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root { --bg: #121212; --node: #1e1e1e; --accent: #e08900; --text: #e0e0e0; --dim: #888; --border: #333; }
         body { background: var(--bg); color: var(--text); font-family: sans-serif; padding: 8px; padding-bottom: 90px; margin: 0; }
         .node { background: var(--node); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
-        .head { font-size: 11px; font-weight: bold; color: var(--dim); text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+        .head { font-size: 11px; font-weight: bold; color: var(--dim); text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 4px; display: flex; justify-content: space-between; }
         
-        /* Inputs */
         select, input, textarea { width: 100%; background: #000; border: 1px solid #333; color: #fff; padding: 8px; border-radius: 6px; box-sizing: border-box; font-size: 13px; margin-bottom: 6px; }
         .row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
         .col { display: flex; flex-direction: column; flex: 1; }
         .label { font-size: 10px; color: #777; margin-bottom: 2px; }
 
-        /* Sliders */
         input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
         .badge { color: var(--accent); font-weight: bold; font-size: 12px; min-width: 24px; text-align: right; }
         
-        /* Buttons & Grid */
         .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
         .btn { background: #2a2a2a; border: 1px solid #444; padding: 6px; text-align: center; border-radius: 4px; font-size: 10px; cursor: pointer; color: #aaa; transition: 0.2s; }
         .btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: bold; }
         
-        /* Refs */
         .ref-card { background: #141414; border: 1px solid #2a2a2a; padding: 6px; border-radius: 6px; margin-bottom: 4px; }
         .ref-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
         .tgl { background: #333; color: #aaa; padding: 3px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; border: 1px solid #444; }
         .tgl.on { background: var(--accent); color: #000; border-color: var(--accent); }
-        .rot { width: auto; padding: 2px; height: 22px; font-size: 10px; background: #222; margin:0; }
+        .rot { width: auto; padding: 2px; height: 22px; font-size: 10px; background: #222; margin:0; border: 1px solid #444; }
 
         #send { position: fixed; bottom: 10px; left: 10px; right: 10px; padding: 14px; background: var(--accent); border: none; border-radius: 8px; font-weight: bold; font-size: 16px; width: calc(100% - 20px); color:#000; cursor: pointer; box-shadow: 0 4px 12px rgba(224,137,0,0.3); z-index: 100; }
+        .error-msg { color: #ff5555; font-size: 12px; text-align: center; display: none; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
+    <div id="error-box" class="error-msg"></div>
+
     <div class="node">
-        <div class="head">⚙️ Model & Settings</div>
+        <div class="head">⚙️ Model & Settings <span id="status" style="color:#555">Loading...</span></div>
         
         <div class="label">Diffusion Model (Checkpoint)</div>
-        <select id="ckpt"><option>Loading...</option></select>
+        <select id="ckpt"><option value="">Waiting for server...</option></select>
         
         <div class="row">
             <div class="col">
-                <div class="label">CLIP (Encoder)</div>
-                <select id="clip"><option>Loading...</option></select>
+                <div class="label">CLIP</div>
+                <select id="clip"><option value="">Default/Loading...</option></select>
             </div>
             <div class="col">
                 <div class="label">VAE</div>
-                <select id="vae"><option>Loading...</option></select>
+                <select id="vae"><option value="">Default/Loading...</option></select>
             </div>
         </div>
 
         <div class="row">
             <div class="col">
-                <div class="label">Precision (Type)</div>
+                <div class="label">Precision</div>
                 <select id="dtype">
-                    <option value="fp8_e4m3fn_fast">FP8 Fast (Default)</option>
-                    <option value="fp8_e4m3fn">FP8 Standard</option>
+                    <option value="fp8_e4m3fn_fast">FP8 Fast</option>
+                    <option value="fp8_e4m3fn">FP8 Std</option>
                     <option value="bf16">BF16</option>
-                    <option value="fp16">FP16</option>
-                    <option value="default">Auto</option>
+                    <option value="default">Default</option>
                 </select>
             </div>
             <div class="col">
-                <div class="label">Sage Attention</div>
+                <div class="label">Sage Attn</div>
                 <select id="sage">
                     <option value="disabled">Disabled</option>
                     <option value="enabled">Enabled</option>
@@ -85,16 +83,16 @@
             <option value="9:16 (Portrait)">9:16 Story</option>
         </select>
         
-        <div class="row"><span>Steps</span><input type="range" id="steps" min="4" max="20" value="8" oninput="upd('v_st',this.value)"><span id="v_st" class="badge">8</span></div>
-        <div class="row"><span>CFG</span><input type="range" id="cfg" min="1.0" max="3.0" step="0.1" value="1.0" oninput="upd('v_cfg',this.value)"><span id="v_cfg" class="badge">1.0</span></div>
+        <div class="row"><span>Steps</span><input type="range" id="steps" min="4" max="25" value="8" oninput="upd('v_st',this.value)"><span id="v_st" class="badge">8</span></div>
+        <div class="row"><span>CFG</span><input type="range" id="cfg" min="1.0" max="4.0" step="0.1" value="1.0" oninput="upd('v_cfg',this.value)"><span id="v_cfg" class="badge">1.0</span></div>
         <input type="text" id="seed" placeholder="Seed (-1 Random)" value="-1">
     </div>
 
     <div class="node">
-        <div class="head">🖼 References (Flip/Rotate)</div>
+        <div class="head">🖼 References</div>
         <div id="refs"></div>
         <div class="row" style="margin-top:8px; border-top:1px solid #333; padding-top:4px">
-            <span style="font-size:10px">Ref Scale (Excl. #1)</span>
+            <span style="font-size:10px">Ref Scale</span>
             <input type="range" id="rscale" min="0" max="1.5" step="0.05" value="0.75" oninput="upd('v_rs',this.value)"><span id="v_rs" class="badge">0.75</span>
         </div>
     </div>
@@ -106,14 +104,7 @@
     </div>
 
     <div class="node">
-        <div class="head">🧩 LoRA Stacker</div>
-        <div id="loras"></div>
-        <div class="btn" onclick="addLora()" style="width:100%; margin-top:5px">+ Add LoRA</div>
-    </div>
-
-    <div class="node">
-        <div class="head">🎥 Camera & Inpaint</div>
-        <div class="label">Rotation</div>
+        <div class="head">🎥 Camera</div>
         <div class="grid" id="g_rot">
             <div class="btn active" onclick="set(this,'rot',0)">Off</div>
             <div class="btn" onclick="set(this,'rot',1)">Front</div>
@@ -124,7 +115,7 @@
         </div>
         <input type="hidden" id="rot" value="0">
         
-        <div class="label" style="margin-top:5px">Angle</div>
+        <div style="height:5px"></div>
         <div class="grid" id="g_ang">
             <div class="btn active" onclick="set(this,'ang',0)">Off</div>
             <div class="btn" onclick="set(this,'ang',4)">High</div>
@@ -134,7 +125,7 @@
         </div>
         <input type="hidden" id="ang" value="0">
         
-        <div class="label" style="margin-top:5px">Distance</div>
+        <div style="height:5px"></div>
         <div class="grid" id="g_dist">
             <div class="btn active" onclick="set(this,'dist',0)">Off</div>
             <div class="btn" onclick="set(this,'dist',1)">Close</div>
@@ -142,14 +133,21 @@
             <div class="btn" onclick="set(this,'dist',3)">Full</div>
         </div>
         <input type="hidden" id="dist" value="0">
-
-        <div style="border-top:1px solid #333; margin-top:8px; padding-top:5px">
-            <div class="row"><span>Context</span><input type="range" id="ctx" min="1" max="2" step="0.1" value="1.2" oninput="upd('v_ctx',this.value)"><span id="v_ctx" class="badge">1.2</span></div>
-            <div class="row"><span>Rescale</span><input type="range" id="resc" min="1" max="2" step="0.1" value="1.0" oninput="upd('v_resc',this.value)"><span id="v_resc" class="badge">1.0</span></div>
-        </div>
+    </div>
+    
+    <div class="node">
+        <div class="head">🖌 Inpaint Params</div>
+        <div class="row"><span>Context</span><input type="range" id="ctx" min="1" max="2" step="0.1" value="1.2" oninput="upd('v_ctx',this.value)"><span id="v_ctx" class="badge">1.2</span></div>
+        <div class="row"><span>Rescale</span><input type="range" id="resc" min="1" max="2" step="0.1" value="1.0" oninput="upd('v_resc',this.value)"><span id="v_resc" class="badge">1.0</span></div>
     </div>
 
-    <button id="send" onclick="send()">QUEUE GENERATION</button>
+    <div class="node">
+        <div class="head">🧩 LoRA Stacker</div>
+        <div id="loras"></div>
+        <div class="btn" onclick="addLora()" style="width:100%; margin-top:5px">+ Add LoRA</div>
+    </div>
+
+    <button id="send" onclick="send()">QUEUE FLUX</button>
 
     <script>
         let tg = window.Telegram.WebApp; tg.expand();
@@ -162,12 +160,12 @@
             el.classList.add('active');
         }
 
-        // --- RENDER FUNCTIONS ---
+        // --- RENDER REFS ---
         function renderRefs(){
             let h = "";
             for(let i=1; i<=6; i++){
                 let label = i===1 ? "Image 1 (Main)" : `Image ${i}`;
-                let opts = `<option value="">Select...</option>` + availImgs.map(x=>`<option value="${x}">${x}</option>`).join('');
+                let opts = `<option value="">Select Image...</option>` + availImgs.map(x=>`<option value="${x}">${x}</option>`).join('');
                 h += `
                 <div class="ref-card">
                     <div class="ref-top">
@@ -190,7 +188,7 @@
         function addLora(){
             let d = document.createElement('div'); d.style.marginBottom="4px";
             d.innerHTML = `<div class="row" style="background:#000; padding:2px; border-radius:4px">
-                <select class="l-sel" style="margin:0; border:none; font-size:12px"><option value="">None</option>${availLoras.map(x=>`<option>${x}</option>`)}</select>
+                <select class="l-sel" style="margin:0; border:none; font-size:12px"><option value="">Select LoRA...</option>${availLoras.map(x=>`<option>${x}</option>`)}</select>
                 <input type="number" class="l-w" value="0.8" step="0.1" style="width:40px; border:none; text-align:center; background:#111">
                 <span onclick="this.parentElement.parentElement.remove()" style="color:#d32f2f; cursor:pointer; padding:0 6px; font-weight:bold">✕</span>
             </div>`;
@@ -199,33 +197,53 @@
 
         // --- INIT ---
         async function init(){
-            let [ckpt, clip, vae, loras, imgs] = await Promise.all([
-                fetch('/api/checkpoints').then(r=>r.json()),
-                fetch('/api/clip').then(r=>r.json()),
-                fetch('/api/vae').then(r=>r.json()),
-                fetch('/api/loras').then(r=>r.json()),
-                fetch('/api/images').then(r=>r.json())
-            ]);
-            
-            let fill = (id, list) => {
-                let s = document.getElementById(id); s.innerHTML="";
-                list.forEach(x=>s.add(new Option(x,x)));
-            };
-            fill('ckpt', ckpt.checkpoints);
-            fill('clip', clip.clip);
-            fill('vae', vae.vae);
-            
-            availLoras = loras.loras;
-            availImgs = imgs.images;
-            renderRefs();
+            try {
+                let [ckpt, clip, vae, loras, imgs] = await Promise.all([
+                    fetch('/api/checkpoints').then(r=>r.json()),
+                    fetch('/api/clip').then(r=>r.json()),
+                    fetch('/api/vae').then(r=>r.json()),
+                    fetch('/api/loras').then(r=>r.json()),
+                    fetch('/api/images').then(r=>r.json())
+                ]);
+                
+                let fill = (id, list, def) => {
+                    let s = document.getElementById(id); s.innerHTML="";
+                    if(def) s.add(new Option(def, "")); // Default empty
+                    if(list && list.length) {
+                        list.forEach(x=>s.add(new Option(x,x)));
+                    } else {
+                        s.add(new Option("No files found", ""));
+                    }
+                };
+                
+                fill('ckpt', ckpt.checkpoints);
+                fill('clip', clip.clip);
+                fill('vae', vae.vae);
+                
+                availLoras = loras.loras || [];
+                availImgs = imgs.images || [];
+                
+                renderRefs();
+                document.getElementById('status').innerText = "Ready";
+                document.getElementById('status').style.color = "#00ff00";
+            } catch(e) {
+                document.getElementById('status').innerText = "Error loading API";
+                document.getElementById('status').style.color = "red";
+            }
         }
         init();
 
         // --- SEND ---
         function send(){
+            let ckpt = document.getElementById('ckpt').value;
+            if(!ckpt || ckpt === "") {
+                alert("❌ Please select a Checkpoint Model!");
+                return;
+            }
+
             let d = {
                 // Model
-                ckpt: document.getElementById('ckpt').value,
+                ckpt: ckpt,
                 clip: document.getElementById('clip').value,
                 vae: document.getElementById('vae').value,
                 dtype: document.getElementById('dtype').value,
@@ -251,17 +269,21 @@
             };
             
             document.querySelectorAll('.l-sel').forEach((s,i)=>{
-                if(s.value) d.loras.push({name:s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value)});
+                if(s.value && s.value !== "") {
+                    d.loras.push({name:s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value)});
+                }
             });
 
             for(let i=1; i<=6; i++){
                 let im = document.getElementById(`im_${i}`).value;
-                if(im) d.refs.push({
-                    idx: i, image: im,
-                    active: document.getElementById(`act_${i}`).classList.contains('on'),
-                    flip: document.getElementById(`flp_${i}`).classList.contains('on'),
-                    rot: document.getElementById(`rt_${i}`).value
-                });
+                if(im && im !== "") {
+                    d.refs.push({
+                        idx: i, image: im,
+                        active: document.getElementById(`act_${i}`).classList.contains('on'),
+                        flip: document.getElementById(`flp_${i}`).classList.contains('on'),
+                        rot: document.getElementById(`rt_${i}`).value
+                    });
+                }
             }
             tg.sendData(JSON.stringify(d));
         }
