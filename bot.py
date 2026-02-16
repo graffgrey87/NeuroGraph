@@ -54,7 +54,7 @@ async def check_auth(update):
 
 def fix_paths_for_linux(workflow):
     for nid, node in workflow.items():
-        if "inputs" in node:
+        if isinstance(node, dict) and "inputs" in node:
             for key, val in node["inputs"].items():
                 if isinstance(val, str) and "\\" in val:
                     node["inputs"][key] = val.replace("\\", "/")
@@ -63,8 +63,18 @@ def fix_paths_for_linux(workflow):
 def find_node_id(workflow, class_type_list):
     if isinstance(workflow, dict):
         for node_id, node_data in workflow.items():
-            if node_data.get("class_type") in class_type_list: return node_id
+            if isinstance(node_data, dict) and node_data.get("class_type") in class_type_list: 
+                return node_id
     return None
+
+def clean_workflow_safe(wf):
+    """Удаляет из JSON всё, что не является нодой (версии, группы, метаданные)"""
+    clean_wf = {}
+    for key, value in wf.items():
+        # Оставляем только те ключи, где значение - словарь и есть 'class_type'
+        if isinstance(value, dict) and "class_type" in value:
+            clean_wf[key] = value
+    return clean_wf
 
 def get_lora_names(uid):
     names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
@@ -98,8 +108,11 @@ def upload_image(file_bytes, file_name):
     except: return None
 
 def queue_prompt(wf):
+    # ВАЖНО: Чистим JSON перед отправкой, чтобы избежать KeyError: 'class_type'
+    clean_wf = clean_workflow_safe(wf)
+    
     try:
-        data = json.dumps({"prompt": wf, "client_id": CLIENT_ID}).encode('utf-8')
+        data = json.dumps({"prompt": clean_wf, "client_id": CLIENT_ID}).encode('utf-8')
         req = urllib.request.Request(f"http://{COMFY_SERVER}/prompt", data=data)
         return json.loads(urllib.request.urlopen(req).read())
     except Exception as e: return {'error': str(e)}
@@ -154,7 +167,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v6.1**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v6.3**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -380,6 +393,7 @@ async def run_legacy_gen(update, context, uid):
     for i in range(d['batch']):
         with open(cfg['file'], "r") as f: wf = json.load(f)
         wf = fix_paths_for_linux(wf)
+        wf = clean_workflow_safe(wf) # <--- ЧИСТИМ И ТУТ ТОЖЕ
         
         # Inject Photo
         if cfg['need_photo']:
@@ -403,7 +417,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(CallbackQueryHandler(handle_callback)) # <--- ВОТ ЧТО Я ЗАБЫЛ В ПРОШЛЫЙ РАЗ!
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v6.2 Fixed Started on {RUNPOD_ID}")
+    print(f"✅ Bot v6.3 Final Started on {RUNPOD_ID}")
     app.run_polling()
