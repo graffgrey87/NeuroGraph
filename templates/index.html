@@ -3,211 +3,355 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Flux Settings</title>
+    <title>NeuroGraph Flux Controller</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+        /* --- 🎨 THEMES (Comfy Style) --- */
+        :root {
+            --bg-color: #121212;
+            --node-bg: #2b2b2b;
+            --input-bg: #1a1a1a;
+            --text-main: #e0e0e0;
+            --text-dim: #aaaaaa;
+            --accent: #e08900;
+            --accent-hover: #ff9d0a;
+            --border: #3d3d3d;
+            --radius: 8px;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--tg-theme-bg-color, #1c1c1e);
-            color: var(--tg-theme-text-color, #ffffff);
-            margin: 0;
-            padding: 16px;
-            box-sizing: border-box;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            margin: 0; padding: 12px;
+            padding-bottom: 80px; /* Space for button */
         }
 
-        h2 {
-            text-align: center;
-            margin-top: 0;
-            margin-bottom: 20px;
-            font-size: 20px;
-            color: var(--tg-theme-text-color, #ffffff);
+        /* --- NODES --- */
+        .node {
+            background: var(--node-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px; margin-bottom: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        .node-title {
+            font-size: 13px; font-weight: bold;
+            color: var(--text-dim); text-transform: uppercase;
+            margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+        }
+        .node-title::before {
+            content: ''; display: block; width: 8px; height: 8px;
+            background: var(--accent); border-radius: 50%;
         }
 
-        .section {
-            background-color: var(--tg-theme-secondary-bg-color, #2c2c2e);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 15px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--tg-theme-hint-color, #8e8e93);
-        }
-
-        select {
-            width: 100%;
-            padding: 12px;
-            border-radius: 8px;
-            border: 1px solid var(--tg-theme-bg-color);
-            background-color: var(--tg-theme-bg-color, #000);
-            color: var(--tg-theme-text-color, #fff);
-            font-size: 16px;
-            appearance: none; /* Убирает стандартную стрелку браузера */
-            outline: none;
-        }
-
-        /* Ползунок веса */
-        .slider-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-top: 10px;
-        }
+        /* --- CONTROLS --- */
+        label { display: block; font-size: 11px; color: var(--text-dim); margin: 8px 0 4px; }
         
-        input[type="range"] {
-            flex-grow: 1;
-            margin-right: 15px;
-            accent-color: var(--tg-theme-button-color, #3390ec);
+        select, input[type="text"], textarea {
+            width: 100%; background: var(--input-bg);
+            border: 1px solid var(--border); color: var(--text-main);
+            padding: 10px; border-radius: 6px; font-size: 14px;
+            box-sizing: border-box; outline: none;
+        }
+        select:focus, input:focus { border-color: var(--accent); }
+
+        /* --- SLIDERS --- */
+        .slider-row { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
+        input[type="range"] { flex-grow: 1; accent-color: var(--accent); cursor: pointer; }
+        .val-badge {
+            background: var(--input-bg); border: 1px solid var(--accent);
+            color: var(--accent); padding: 2px 6px; border-radius: 4px;
+            font-size: 12px; min-width: 30px; text-align: center;
         }
 
-        .value-badge {
-            background-color: var(--tg-theme-button-color, #3390ec);
-            color: var(--tg-theme-button-text-color, #ffffff);
-            padding: 2px 8px;
-            border-radius: 6px;
-            font-size: 14px;
-            min-width: 30px;
-            text-align: center;
+        /* --- CAMERA GRID --- */
+        .cam-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+        .cam-btn {
+            background: var(--input-bg); border: 1px solid #444;
+            color: var(--text-dim); padding: 8px 2px;
+            border-radius: 6px; font-size: 11px; text-align: center;
+            cursor: pointer; transition: 0.2s;
+        }
+        .cam-btn.active {
+            background: var(--accent); color: #000;
+            border-color: var(--accent); font-weight: bold;
         }
 
-        /* Главная кнопка */
+        /* --- IMAGE SELECTOR --- */
+        .ref-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .toggle-btn {
+            background: var(--input-bg); border: 1px solid #555;
+            color: #555; padding: 10px; border-radius: 6px;
+            cursor: pointer; font-weight: bold; font-size: 12px; width: 50px; text-align: center;
+        }
+        .toggle-btn.on { background: var(--accent); color: #000; border-color: var(--accent); }
+
+        /* --- LORA STACK --- */
+        .lora-item {
+            background: var(--input-bg); padding: 8px;
+            border-radius: 6px; margin-bottom: 6px; border: 1px solid #333;
+        }
+        .btn-add {
+            width: 100%; padding: 10px; background: transparent;
+            border: 1px dashed #666; color: #888; border-radius: 6px; cursor: pointer;
+        }
+        .btn-del { float: right; color: #ff5555; cursor: pointer; font-weight: bold; }
+
+        /* --- MAIN BUTTON --- */
         #main-btn {
-            width: 100%;
-            padding: 16px;
-            border: none;
-            border-radius: 12px;
-            background-color: var(--tg-theme-button-color, #3390ec);
-            color: var(--tg-theme-button-text-color, #ffffff);
-            font-size: 17px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 10px;
-            transition: opacity 0.2s;
+            position: fixed; bottom: 15px; left: 15px; right: 15px;
+            padding: 16px; background: var(--accent); color: #000;
+            border: none; border-radius: 10px; font-size: 16px; font-weight: 800;
+            box-shadow: 0 4px 15px rgba(224, 137, 0, 0.3); z-index: 100;
         }
-
-        #main-btn:active {
-            opacity: 0.8;
-        }
-
-        /* Анимация загрузки */
-        .loader {
-            text-align: center;
-            color: var(--tg-theme-hint-color);
-            font-size: 14px;
+        #main-btn:active { transform: scale(0.98); }
+        
+        .seed-row { display: flex; gap: 5px; }
+        .seed-btn {
+            background: var(--input-bg); border: 1px solid var(--border);
+            color: var(--text-main); padding: 0 15px; border-radius: 6px; cursor: pointer;
         }
     </style>
 </head>
 <body>
 
-    <h2>⚙️ Flux Настройки</h2>
+    <div class="node">
+        <div class="node-title">⚙️ Global Settings</div>
+        
+        <label>Checkpoint</label>
+        <select id="checkpoint"><option>Loading models...</option></select>
 
-    <div class="section">
-        <label for="checkpoint">Checkpoint (Модель)</label>
-        <select id="checkpoint">
-            <option value="" disabled selected>🔄 Загрузка списка...</option>
-        </select>
-    </div>
-
-    <div class="section">
-        <label for="lora_1">LoRA (Стиль/Персонаж)</label>
-        <select id="lora_1">
-            <option value="None">Loading...</option>
+        <label>Resolution</label>
+        <select id="resolution">
+            <option value="1024x1024 (Square)">1:1 (Square)</option>
+            <option value="832x1216 (Portrait)">2:3 (Portrait)</option>
+            <option value="1216x832 (Landscape)">3:2 (Landscape)</option>
+            <option value="896x1152 (Portrait 4:3)">3:4 (Portrait)</option>
+            <option value="1152x896 (Landscape 4:3)">4:3 (Landscape)</option>
+            <option value="1536x640 (Ultrawide)">21:9 (Ultrawide)</option>
         </select>
 
         <div class="slider-row">
-            <input type="range" id="weight_1" min="0" max="2" step="0.1" value="1.0" oninput="updateVal('val_1', this.value)">
-            <span id="val_1" class="value-badge">1.0</span>
+            <label style="width:40px">Steps</label>
+            <input type="range" id="steps" min="4" max="12" value="8" oninput="upd('v_st', this.value)">
+            <span id="v_st" class="val-badge">8</span>
+        </div>
+
+        <div class="slider-row">
+            <label style="width:40px">CFG</label>
+            <input type="range" id="cfg" min="0.0" max="3.0" step="0.1" value="2.0" oninput="upd('v_cfg', this.value)">
+            <span id="v_cfg" class="val-badge">2.0</span>
+        </div>
+
+        <label>Seed</label>
+        <div class="seed-row">
+            <input type="text" id="seed" value="-1" placeholder="-1 (Random)">
+            <button class="seed-btn" onclick="document.getElementById('seed').value = '-1'">🎲</button>
         </div>
     </div>
 
-    <button id="main-btn" onclick="sendData()">ГЕНЕРИРОВАТЬ</button>
+    <div class="node">
+        <div class="node-title">🖼 Reference Images</div>
+        
+        <label>Main Image (Img 1)</label>
+        <select id="img1" class="img-select"><option>No images found in /input</option></select>
+        
+        <label>Ref Image 2</label>
+        <div class="ref-row">
+            <div class="toggle-btn" id="t2" onclick="toggle('t2')">OFF</div>
+            <select id="img2" class="img-select"><option>Select Image...</option></select>
+        </div>
+
+        <label>Ref Image 3</label>
+        <div class="ref-row">
+            <div class="toggle-btn" id="t3" onclick="toggle('t3')">OFF</div>
+            <select id="img3" class="img-select"><option>Select Image...</option></select>
+        </div>
+
+        <div class="slider-row">
+            <label style="width:60px">Scaling</label>
+            <input type="range" id="ref_scale" min="0.1" max="2.0" step="0.1" value="1.0" oninput="upd('v_rs', this.value)">
+            <span id="v_rs" class="val-badge">1.0</span>
+        </div>
+    </div>
+
+    <div class="node">
+        <div class="node-title">📝 Prompt</div>
+        <textarea id="pos" rows="3" placeholder="Positive prompt (English)..."></textarea>
+        <div style="height:5px"></div>
+        <textarea id="neg" rows="2" placeholder="Negative prompt..."></textarea>
+    </div>
+
+    <div class="node">
+        <div class="node-title">🧩 LoRA Stack</div>
+        <div id="lora-container"></div>
+        <button class="btn-add" onclick="addLoraSlot()">+ Add LoRA</button>
+    </div>
+
+    <div class="node">
+        <div class="node-title">🎥 Camera Control</div>
+
+        <label>Rotation</label>
+        <div class="cam-grid" id="grp-rot">
+            <div class="cam-btn active" onclick="setCam('rot', 0, this)">🚫 Off</div>
+            <div class="cam-btn" onclick="setCam('rot', 1, this)">⬆️ Front</div>
+            <div class="cam-btn" onclick="setCam('rot', 2, this)">↗️ 3/4</div>
+            <div class="cam-btn" onclick="setCam('rot', 3, this)">➡️ Side</div>
+            <div class="cam-btn" onclick="setCam('rot', 4, this)">↘️ Back 3/4</div>
+            <div class="cam-btn" onclick="setCam('rot', 5, this)">⬇️ Back</div>
+        </div>
+        <input type="hidden" id="val-rot" value="0">
+
+        <label>Angle</label>
+        <div class="cam-grid" id="grp-ang">
+            <div class="cam-btn active" onclick="setCam('ang', 0, this)">🚫 Off</div>
+            <div class="cam-btn" onclick="setCam('ang', 4, this)">⬆️ High</div>
+            <div class="cam-btn" onclick="setCam('ang', 3, this)">⏺ Level</div>
+            <div class="cam-btn" onclick="setCam('ang', 2, this)">⬇️ Low</div>
+            <div class="cam-btn" onclick="setCam('ang', 1, this)">⏬ V.Low</div>
+        </div>
+        <input type="hidden" id="val-ang" value="0">
+
+        <label>Distance</label>
+        <div class="cam-grid" id="grp-dist">
+            <div class="cam-btn active" onclick="setCam('dist', 0, this)">🚫 Off</div>
+            <div class="cam-btn" onclick="setCam('dist', 1, this)">🔍 Close</div>
+            <div class="cam-btn" onclick="setCam('dist', 2, this)">👤 Waist</div>
+            <div class="cam-btn" onclick="setCam('dist', 3, this)">🧍 Full</div>
+        </div>
+        <input type="hidden" id="val-dist" value="0">
+    </div>
+    
+    <div class="node">
+        <div class="node-title">🖌 Inpaint Params</div>
+        <div class="slider-row">
+            <label style="width:50px">Context</label>
+            <input type="range" min="1.0" max="2.0" step="0.1" value="1.2" oninput="upd('v_ctx', this.value)" id="inp_ctx">
+            <span id="v_ctx" class="val-badge">1.2</span>
+        </div>
+        <div class="slider-row">
+            <label style="width:50px">Rescale</label>
+            <input type="range" min="1.0" max="2.0" step="0.1" value="1.0" oninput="upd('v_res', this.value)" id="inp_res">
+            <span id="v_res" class="val-badge">1.0</span>
+        </div>
+    </div>
+
+    <button id="main-btn" onclick="sendData()">QUEUE GENERATION</button>
 
     <script>
-        // Инициализация Telegram WebApp
         let tg = window.Telegram.WebApp;
-        tg.expand(); // Раскрыть на весь экран
+        tg.expand();
+        
+        let availableLoras = [];
 
-        // Обновление цифр ползунка
-        function updateVal(id, val) {
-            document.getElementById(id).innerText = val;
+        function upd(id, val) { document.getElementById(id).innerText = val; }
+
+        function toggle(id) {
+            let el = document.getElementById(id);
+            if (el.classList.contains('on')) {
+                el.classList.remove('on'); el.innerText = "OFF";
+            } else {
+                el.classList.add('on'); el.innerText = "ON";
+            }
         }
 
-        // Загрузка данных с нашего сервера Python
-        async function loadData() {
+        function setCam(type, val, btn) {
+            document.getElementById('val-' + type).value = val;
+            let container = document.getElementById('grp-' + type);
+            container.querySelectorAll('.cam-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        function addLoraSlot() {
+            let container = document.getElementById('lora-container');
+            let div = document.createElement('div');
+            div.className = 'lora-item';
+            let options = availableLoras.map(l => `<option value="${l}">${l}</option>`).join('');
+            div.innerHTML = `
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                    <span style="font-size:11px; color:#888;">LoRA</span>
+                    <span class="btn-del" onclick="this.parentElement.parentElement.remove()">✕</span>
+                </div>
+                <select class="lora-select"><option value="None">Select LoRA...</option>${options}</select>
+                <div class="slider-row">
+                    <input type="range" class="lora-weight" min="0" max="2" step="0.1" value="0.8" oninput="this.nextElementSibling.innerText=this.value">
+                    <span class="val-badge">0.8</span>
+                </div>
+            `;
+            container.appendChild(div);
+        }
+
+        async function init() {
             try {
-                // 1. Загружаем Checkpoints
-                let resCkpt = await fetch('/api/checkpoints');
-                let dataCkpt = await resCkpt.json();
+                // Models
+                let ckpts = await (await fetch('/api/checkpoints')).json();
+                let sel = document.getElementById('checkpoint');
+                sel.innerHTML = "";
+                ckpts.checkpoints.forEach(m => {
+                    let opt = new Option(m, m);
+                    if(m.includes('flux') || m.includes('klein')) opt.selected = true;
+                    sel.add(opt);
+                });
+
+                // Loras
+                let lrs = await (await fetch('/api/loras')).json();
+                availableLoras = lrs.loras;
                 
-                let ckptSelect = document.getElementById('checkpoint');
-                ckptSelect.innerHTML = ""; // Очистить "Загрузка..."
-
-                if (dataCkpt.checkpoints && dataCkpt.checkpoints.length > 0) {
-                    dataCkpt.checkpoints.forEach(model => {
-                        let opt = document.createElement('option');
-                        opt.value = model;
-                        opt.innerText = model;
-                        // Автовыбор Flux, если есть в названии
-                        if (model.toLowerCase().includes("flux") || model.toLowerCase().includes("klein")) {
-                            opt.selected = true;
-                        }
-                        ckptSelect.appendChild(opt);
-                    });
-                } else {
-                    let opt = document.createElement('option');
-                    opt.innerText = "❌ Модели не найдены";
-                    ckptSelect.appendChild(opt);
-                }
-
-                // 2. Загружаем LoRAs
-                let resLora = await fetch('/api/loras');
-                let dataLora = await resLora.json();
+                // Images
+                let imgs = await (await fetch('/api/images')).json();
+                let imgSelects = document.querySelectorAll('.img-select');
                 
-                let loraSelect = document.getElementById('lora_1');
-                loraSelect.innerHTML = '<option value="None">⛔ Без Лоры (None)</option>';
+                imgSelects.forEach(s => {
+                    s.innerHTML = "";
+                    if (imgs.images.length === 0) {
+                        s.add(new Option("No images found (Upload to bot!)", ""));
+                    } else {
+                        imgs.images.forEach(im => s.add(new Option(im, im)));
+                    }
+                });
 
-                if (dataLora.loras && dataLora.loras.length > 0) {
-                    dataLora.loras.forEach(lora => {
-                        let opt = document.createElement('option');
-                        opt.value = lora;
-                        opt.innerText = lora;
-                        loraSelect.appendChild(opt);
-                    });
-                }
-
-            } catch (error) {
-                alert("Ошибка соединения с сервером: " + error);
+            } catch(e) { 
+                // alert("Connection error. Is server running?"); 
             }
         }
 
-        // Отправка данных боту
         function sendData() {
-            let checkpoint = document.getElementById('checkpoint').value;
-            let lora_1 = document.getElementById('lora_1').value;
-            let weight_1 = document.getElementById('weight_1').value;
-
-            if (!checkpoint || checkpoint.includes("Модели не найдены")) {
-                tg.showPopup({title: 'Ошибка', message: 'Выберите модель!'});
-                return;
-            }
+            let loraList = [];
+            document.querySelectorAll('.lora-item').forEach(item => {
+                let name = item.querySelector('.lora-select').value;
+                let weight = item.querySelector('.lora-weight').value;
+                if(name !== "None") loraList.push({ name: name, weight: parseFloat(weight) });
+            });
 
             let data = {
-                checkpoint: checkpoint,
-                lora_1: lora_1,
-                weight_1: weight_1
-            };
+                checkpoint: document.getElementById('checkpoint').value,
+                resolution: document.getElementById('resolution').value,
+                steps: document.getElementById('steps').value,
+                cfg: document.getElementById('cfg').value,
+                seed: document.getElementById('seed').value,
+                prompt_pos: document.getElementById('pos').value,
+                prompt_neg: document.getElementById('neg').value,
+                loras: loraList,
+                cam_rot: parseInt(document.getElementById('val-rot').value),
+                cam_ang: parseInt(document.getElementById('val-ang').value),
+                cam_dist: parseInt(document.getElementById('val-dist').value),
+                
+                // Images
+                img1: document.getElementById('img1').value,
+                img2: document.getElementById('img2').value,
+                img2_on: document.getElementById('t2').classList.contains('on'),
+                img3: document.getElementById('img3').value,
+                img3_on: document.getElementById('t3').classList.contains('on'),
+                ref_scale: document.getElementById('ref_scale').value,
 
-            // Отправляем JSON боту
+                ctx: document.getElementById('inp_ctx').value,
+                rescale: document.getElementById('inp_res').value
+            };
             tg.sendData(JSON.stringify(data));
         }
 
-        // Запускаем при загрузке страницы
-        loadData();
-
+        init();
     </script>
 </body>
 </html>
