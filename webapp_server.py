@@ -1,42 +1,38 @@
-import uvicorn
-import os
-import json
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+import uvicorn
+import os
+import sys
 
 app = FastAPI()
 
-# ПУТИ (Адаптировано под RunPod и ваш скрипт)
-BASE_DIR = "/workspace/ComfyUI"
-DIRS = {
-    "loras": os.path.join(BASE_DIR, "models/loras"),
-    "checkpoints": os.path.join(BASE_DIR, "models/diffusion_models")
-}
+# Определяем пути
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-# Шаблоны (HTML)
-templates = Jinja2Templates(directory="/workspace/templates")
+# Создаем папки, если их нет (чтобы сервер не падал при старте)
+if not os.path.exists(TEMPLATE_DIR):
+    os.makedirs(TEMPLATE_DIR)
+    # Создаем заглушку, если индексного файла нет
+    with open(os.path.join(TEMPLATE_DIR, "index.html"), "w") as f:
+        f.write("<h1>WebApp Server is Running. Please upload index.html to templates folder.</h1>")
 
-def get_files(folder):
-    """Сканирует папку и возвращает чистый список файлов для выпадающего меню"""
-    if not os.path.exists(folder): return []
-    files = []
-    for root, _, filenames in os.walk(folder):
-        for f in filenames:
-            if f.endswith(".safetensors") or f.endswith(".ckpt") or f.endswith(".gguf"):
-                files.append(f)
-    return sorted(files)
+if not os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR)
+
+# Подключаем статику и шаблоны
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATE_DIR)
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "loras": get_files(DIRS["loras"]),
-        "checkpoints": get_files(DIRS["checkpoints"])
-    })
+async def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 if __name__ == "__main__":
-    # Запускаем на 0.0.0.0, порт 8084 (как прописано в install.sh)
-    print("🚀 WebApp Server starting on port 8084...")
-    uvicorn.run(app, host="0.0.0.0", port=8084)
+    # ВАЖНО: host="0.0.0.0" позволяет доступ снаружи (через RunPod Proxy)
+    # Порт 8099 - тот, который мы открыли в настройках пода
+    print("🚀 Starting WebApp Server on 0.0.0.0:8099...")
+    uvicorn.run(app, host="0.0.0.0", port=8099)
