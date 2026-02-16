@@ -3,355 +3,243 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>NeuroGraph Flux Controller</title>
+    <title>Flux Pro Controller</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        /* --- 🎨 THEMES (Comfy Style) --- */
         :root {
-            --bg-color: #121212;
-            --node-bg: #2b2b2b;
-            --input-bg: #1a1a1a;
-            --text-main: #e0e0e0;
-            --text-dim: #aaaaaa;
-            --accent: #e08900;
-            --accent-hover: #ff9d0a;
-            --border: #3d3d3d;
-            --radius: 8px;
+            --bg-color: #121212; --node-bg: #2b2b2b; --text-main: #e0e0e0;
+            --accent: #e08900; --border: #3d3d3d; --radius: 8px;
+            --btn-off: #444; --btn-on: #e08900;
         }
-
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            font-family: 'Segoe UI', Roboto, sans-serif;
-            margin: 0; padding: 12px;
-            padding-bottom: 80px; /* Space for button */
-        }
-
-        /* --- NODES --- */
-        .node {
-            background: var(--node-bg);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 12px; margin-bottom: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-        }
-        .node-title {
-            font-size: 13px; font-weight: bold;
-            color: var(--text-dim); text-transform: uppercase;
-            margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
-        }
-        .node-title::before {
-            content: ''; display: block; width: 8px; height: 8px;
-            background: var(--accent); border-radius: 50%;
-        }
-
-        /* --- CONTROLS --- */
-        label { display: block; font-size: 11px; color: var(--text-dim); margin: 8px 0 4px; }
+        body { background-color: var(--bg-color); color: var(--text-main); font-family: sans-serif; padding: 10px; padding-bottom: 80px; }
+        .node { background: var(--node-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; margin-bottom: 10px; }
+        .node-title { font-weight: bold; color: #888; text-transform: uppercase; margin-bottom: 8px; font-size: 11px; letter-spacing: 1px; }
         
-        select, input[type="text"], textarea {
-            width: 100%; background: var(--input-bg);
-            border: 1px solid var(--border); color: var(--text-main);
-            padding: 10px; border-radius: 6px; font-size: 14px;
-            box-sizing: border-box; outline: none;
-        }
-        select:focus, input:focus { border-color: var(--accent); }
-
-        /* --- SLIDERS --- */
-        .slider-row { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
-        input[type="range"] { flex-grow: 1; accent-color: var(--accent); cursor: pointer; }
-        .val-badge {
-            background: var(--input-bg); border: 1px solid var(--accent);
-            color: var(--accent); padding: 2px 6px; border-radius: 4px;
-            font-size: 12px; min-width: 30px; text-align: center;
-        }
-
-        /* --- CAMERA GRID --- */
-        .cam-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
-        .cam-btn {
-            background: var(--input-bg); border: 1px solid #444;
-            color: var(--text-dim); padding: 8px 2px;
-            border-radius: 6px; font-size: 11px; text-align: center;
-            cursor: pointer; transition: 0.2s;
-        }
-        .cam-btn.active {
-            background: var(--accent); color: #000;
-            border-color: var(--accent); font-weight: bold;
-        }
-
-        /* --- IMAGE SELECTOR --- */
-        .ref-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-        .toggle-btn {
-            background: var(--input-bg); border: 1px solid #555;
-            color: #555; padding: 10px; border-radius: 6px;
-            cursor: pointer; font-weight: bold; font-size: 12px; width: 50px; text-align: center;
-        }
-        .toggle-btn.on { background: var(--accent); color: #000; border-color: var(--accent); }
-
-        /* --- LORA STACK --- */
-        .lora-item {
-            background: var(--input-bg); padding: 8px;
-            border-radius: 6px; margin-bottom: 6px; border: 1px solid #333;
-        }
-        .btn-add {
-            width: 100%; padding: 10px; background: transparent;
-            border: 1px dashed #666; color: #888; border-radius: 6px; cursor: pointer;
-        }
-        .btn-del { float: right; color: #ff5555; cursor: pointer; font-weight: bold; }
-
-        /* --- MAIN BUTTON --- */
-        #main-btn {
-            position: fixed; bottom: 15px; left: 15px; right: 15px;
-            padding: 16px; background: var(--accent); color: #000;
-            border: none; border-radius: 10px; font-size: 16px; font-weight: 800;
-            box-shadow: 0 4px 15px rgba(224, 137, 0, 0.3); z-index: 100;
-        }
-        #main-btn:active { transform: scale(0.98); }
+        select, input, textarea { width: 100%; background: #1a1a1a; border: 1px solid var(--border); color: #fff; padding: 8px; border-radius: 6px; margin-bottom: 6px; box-sizing: border-box; font-size: 13px; }
         
-        .seed-row { display: flex; gap: 5px; }
-        .seed-btn {
-            background: var(--input-bg); border: 1px solid var(--border);
-            color: var(--text-main); padding: 0 15px; border-radius: 6px; cursor: pointer;
+        /* Слайдеры */
+        .slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+        input[type="range"] { flex-grow: 1; accent-color: var(--accent); height: 4px; }
+        .val-badge { color: var(--accent); font-weight: bold; min-width: 25px; text-align: right; font-size: 12px; }
+
+        /* Сетка камеры */
+        .cam-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 8px; }
+        .cam-btn { background: #1a1a1a; border: 1px solid #444; padding: 6px; text-align: center; border-radius: 4px; font-size: 10px; cursor: pointer; color: #888; transition: 0.2s; }
+        .cam-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: bold; }
+
+        /* Панель Референса */
+        .ref-card { background: #1e1e1e; border: 1px solid #333; padding: 8px; border-radius: 6px; margin-bottom: 6px; }
+        .ref-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+        .ref-controls { display: flex; gap: 5px; align-items: center; }
+        
+        /* Кнопки управления рефом */
+        .toggle-btn { 
+            background: var(--btn-off); color: #aaa; padding: 4px 8px; border-radius: 4px; 
+            font-size: 10px; cursor: pointer; border: 1px solid #333; user-select: none;
         }
+        .toggle-btn.active { background: var(--btn-on); color: #000; border-color: var(--btn-on); font-weight: bold; }
+        
+        .rot-select { width: 80px; padding: 4px; font-size: 10px; margin: 0; }
+
+        /* Главная кнопка */
+        #main-btn { position: fixed; bottom: 10px; left: 10px; right: 10px; padding: 14px; background: var(--accent); border: none; border-radius: 8px; font-weight: bold; font-size: 16px; width: calc(100% - 20px); cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     </style>
 </head>
 <body>
 
     <div class="node">
-        <div class="node-title">⚙️ Global Settings</div>
-        
-        <label>Checkpoint</label>
-        <select id="checkpoint"><option>Loading models...</option></select>
-
-        <label>Resolution</label>
+        <div class="node-title">⚙️ Settings</div>
+        <select id="checkpoint"><option>Loading...</option></select>
         <select id="resolution">
-            <option value="1024x1024 (Square)">1:1 (Square)</option>
-            <option value="832x1216 (Portrait)">2:3 (Portrait)</option>
-            <option value="1216x832 (Landscape)">3:2 (Landscape)</option>
-            <option value="896x1152 (Portrait 4:3)">3:4 (Portrait)</option>
-            <option value="1152x896 (Landscape 4:3)">4:3 (Landscape)</option>
-            <option value="1536x640 (Ultrawide)">21:9 (Ultrawide)</option>
+            <option value="1024x1024 (Square)">1024x1024 (Square)</option>
+            <option value="832x1216 (Portrait)">832x1216 (Portrait)</option>
+            <option value="1216x832 (Landscape)">1216x832 (Landscape)</option>
+            <option value="16:9 (Landscape)">16:9 (Landscape)</option>
+            <option value="9:16 (Portrait)">9:16 (Portrait)</option>
         </select>
-
-        <div class="slider-row">
-            <label style="width:40px">Steps</label>
-            <input type="range" id="steps" min="4" max="12" value="8" oninput="upd('v_st', this.value)">
-            <span id="v_st" class="val-badge">8</span>
-        </div>
-
-        <div class="slider-row">
-            <label style="width:40px">CFG</label>
-            <input type="range" id="cfg" min="0.0" max="3.0" step="0.1" value="2.0" oninput="upd('v_cfg', this.value)">
-            <span id="v_cfg" class="val-badge">2.0</span>
-        </div>
-
-        <label>Seed</label>
-        <div class="seed-row">
-            <input type="text" id="seed" value="-1" placeholder="-1 (Random)">
-            <button class="seed-btn" onclick="document.getElementById('seed').value = '-1'">🎲</button>
-        </div>
+        <div class="slider-row"><span>Steps</span><input type="range" id="steps" min="4" max="12" value="6" oninput="upd('v_st',this.value)"><span id="v_st" class="val-badge">6</span></div>
+        <div class="slider-row"><span>CFG</span><input type="range" id="cfg" min="0.0" max="3.0" step="0.1" value="1.0" oninput="upd('v_cfg',this.value)"><span id="v_cfg" class="val-badge">1.0</span></div>
+        <input type="text" id="seed" placeholder="Seed (-1 = Random)" value="-1">
     </div>
 
     <div class="node">
-        <div class="node-title">🖼 Reference Images</div>
-        
-        <label>Main Image (Img 1)</label>
-        <select id="img1" class="img-select"><option>No images found in /input</option></select>
-        
-        <label>Ref Image 2</label>
-        <div class="ref-row">
-            <div class="toggle-btn" id="t2" onclick="toggle('t2')">OFF</div>
-            <select id="img2" class="img-select"><option>Select Image...</option></select>
-        </div>
-
-        <label>Ref Image 3</label>
-        <div class="ref-row">
-            <div class="toggle-btn" id="t3" onclick="toggle('t3')">OFF</div>
-            <select id="img3" class="img-select"><option>Select Image...</option></select>
-        </div>
-
-        <div class="slider-row">
-            <label style="width:60px">Scaling</label>
-            <input type="range" id="ref_scale" min="0.1" max="2.0" step="0.1" value="1.0" oninput="upd('v_rs', this.value)">
-            <span id="v_rs" class="val-badge">1.0</span>
+        <div class="node-title">🖼 References (Flip / Rotate)</div>
+        <div id="refs-container"></div> <div class="slider-row" style="margin-top:10px; border-top:1px solid #333; padding-top:5px;">
+            <span style="font-size:11px">Ref Scale (Excl. Img 1)</span>
+            <input type="range" id="ref_scale" min="0" max="1.5" step="0.05" value="0.75" oninput="upd('v_rs',this.value)">
+            <span id="v_rs" class="val-badge">0.75</span>
         </div>
     </div>
 
     <div class="node">
         <div class="node-title">📝 Prompt</div>
-        <textarea id="pos" rows="3" placeholder="Positive prompt (English)..."></textarea>
-        <div style="height:5px"></div>
-        <textarea id="neg" rows="2" placeholder="Negative prompt..."></textarea>
-    </div>
-
-    <div class="node">
-        <div class="node-title">🧩 LoRA Stack</div>
-        <div id="lora-container"></div>
-        <button class="btn-add" onclick="addLoraSlot()">+ Add LoRA</button>
+        <textarea id="pos" rows="3" placeholder="Positive..."></textarea>
+        <textarea id="neg" rows="2" placeholder="Negative..."></textarea>
     </div>
 
     <div class="node">
         <div class="node-title">🎥 Camera Control</div>
-
-        <label>Rotation</label>
+        
+        <div style="font-size:10px; margin-bottom:2px">Rotation</div>
         <div class="cam-grid" id="grp-rot">
-            <div class="cam-btn active" onclick="setCam('rot', 0, this)">🚫 Off</div>
-            <div class="cam-btn" onclick="setCam('rot', 1, this)">⬆️ Front</div>
-            <div class="cam-btn" onclick="setCam('rot', 2, this)">↗️ 3/4</div>
-            <div class="cam-btn" onclick="setCam('rot', 3, this)">➡️ Side</div>
-            <div class="cam-btn" onclick="setCam('rot', 4, this)">↘️ Back 3/4</div>
-            <div class="cam-btn" onclick="setCam('rot', 5, this)">⬇️ Back</div>
+            <div class="cam-btn active" onclick="setCam('rot',0,this)">Off</div>
+            <div class="cam-btn" onclick="setCam('rot',1,this)">Front</div>
+            <div class="cam-btn" onclick="setCam('rot',2,this)">3/4</div>
+            <div class="cam-btn" onclick="setCam('rot',3,this)">Side</div>
+            <div class="cam-btn" onclick="setCam('rot',4,this)">Back¾</div>
+            <div class="cam-btn" onclick="setCam('rot',5,this)">Back</div>
         </div>
         <input type="hidden" id="val-rot" value="0">
 
-        <label>Angle</label>
+        <div style="font-size:10px; margin-bottom:2px">Angle</div>
         <div class="cam-grid" id="grp-ang">
-            <div class="cam-btn active" onclick="setCam('ang', 0, this)">🚫 Off</div>
-            <div class="cam-btn" onclick="setCam('ang', 4, this)">⬆️ High</div>
-            <div class="cam-btn" onclick="setCam('ang', 3, this)">⏺ Level</div>
-            <div class="cam-btn" onclick="setCam('ang', 2, this)">⬇️ Low</div>
-            <div class="cam-btn" onclick="setCam('ang', 1, this)">⏬ V.Low</div>
+            <div class="cam-btn active" onclick="setCam('ang',0,this)">Off</div>
+            <div class="cam-btn" onclick="setCam('ang',4,this)">High</div>
+            <div class="cam-btn" onclick="setCam('ang',3,this)">Strght</div>
+            <div class="cam-btn" onclick="setCam('ang',2,this)">Low</div>
+            <div class="cam-btn" onclick="setCam('ang',1,this)">V.Low</div>
         </div>
         <input type="hidden" id="val-ang" value="0">
 
-        <label>Distance</label>
+        <div style="font-size:10px; margin-bottom:2px">Distance</div>
         <div class="cam-grid" id="grp-dist">
-            <div class="cam-btn active" onclick="setCam('dist', 0, this)">🚫 Off</div>
-            <div class="cam-btn" onclick="setCam('dist', 1, this)">🔍 Close</div>
-            <div class="cam-btn" onclick="setCam('dist', 2, this)">👤 Waist</div>
-            <div class="cam-btn" onclick="setCam('dist', 3, this)">🧍 Full</div>
+            <div class="cam-btn active" onclick="setCam('dist',0,this)">Off</div>
+            <div class="cam-btn" onclick="setCam('dist',1,this)">Close</div>
+            <div class="cam-btn" onclick="setCam('dist',2,this)">Half</div>
+            <div class="cam-btn" onclick="setCam('dist',3,this)">Full</div>
         </div>
         <input type="hidden" id="val-dist" value="0">
     </div>
-    
+
     <div class="node">
-        <div class="node-title">🖌 Inpaint Params</div>
-        <div class="slider-row">
-            <label style="width:50px">Context</label>
-            <input type="range" min="1.0" max="2.0" step="0.1" value="1.2" oninput="upd('v_ctx', this.value)" id="inp_ctx">
-            <span id="v_ctx" class="val-badge">1.2</span>
-        </div>
-        <div class="slider-row">
-            <label style="width:50px">Rescale</label>
-            <input type="range" min="1.0" max="2.0" step="0.1" value="1.0" oninput="upd('v_res', this.value)" id="inp_res">
-            <span id="v_res" class="val-badge">1.0</span>
-        </div>
+        <div class="node-title">🧩 LoRAs</div>
+        <div id="lora-container"></div>
+        <button onclick="addLora()" style="width:100%; background:transparent; border:1px dashed #555; color:#888; padding:6px; font-size:11px;">+ Add LoRA</button>
     </div>
 
-    <button id="main-btn" onclick="sendData()">QUEUE GENERATION</button>
+    <div class="node">
+        <div class="node-title">🖌 Inpaint</div>
+        <div class="slider-row"><span>Ctx</span><input type="range" id="ctx" min="1" max="2" step="0.1" value="1.2" oninput="upd('v_ctx',this.value)"><span id="v_ctx" class="val-badge">1.2</span></div>
+        <div class="slider-row"><span>Res</span><input type="range" id="rescale" min="1" max="2" step="0.1" value="1.0" oninput="upd('v_res',this.value)"><span id="v_res" class="val-badge">1.0</span></div>
+    </div>
+
+    <button id="main-btn" onclick="send()">QUEUE FLUX</button>
 
     <script>
-        let tg = window.Telegram.WebApp;
-        tg.expand();
-        
-        let availableLoras = [];
+        let tg = window.Telegram.WebApp; tg.expand();
+        let availLoras = [], availImgs = [];
 
-        function upd(id, val) { document.getElementById(id).innerText = val; }
+        function upd(id,v) { document.getElementById(id).innerText=v; }
+        function setCam(t,v,b) {
+            document.getElementById('val-'+t).value=v;
+            document.getElementById('grp-'+t).querySelectorAll('.cam-btn').forEach(x=>x.classList.remove('active'));
+            b.classList.add('active');
+        }
 
-        function toggle(id) {
-            let el = document.getElementById(id);
-            if (el.classList.contains('on')) {
-                el.classList.remove('on'); el.innerText = "OFF";
-            } else {
-                el.classList.add('on'); el.innerText = "ON";
+        // --- ГЕНЕРАЦИЯ СЛОТОВ КАРТИНОК ---
+        function renderImages() {
+            let c = document.getElementById('refs-container');
+            c.innerHTML = "";
+            for(let i=1; i<=6; i++) {
+                let label = i===1 ? "Image 1 (Main, Fixed)" : `Image ${i}`;
+                let div = document.createElement('div');
+                div.className = "ref-card";
+                
+                // Опции картинок
+                let opts = `<option value="">Select Image...</option>` + availImgs.map(im=>`<option value="${im}">${im}</option>`).join('');
+                
+                div.innerHTML = `
+                    <div class="ref-header">
+                        <span style="font-size:11px; color:#aaa;">${label}</span>
+                        <div class="ref-controls">
+                            <div class="toggle-btn" id="active_${i}" onclick="this.classList.toggle('active')">ON</div>
+                            <div class="toggle-btn" id="flip_${i}" onclick="this.classList.toggle('active')">↔️</div>
+                            <select id="rot_${i}" class="rot-select">
+                                <option value="none">0°</option>
+                                <option value="90 degrees">90°</option>
+                                <option value="180 degrees">180°</option>
+                                <option value="270 degrees">270°</option>
+                            </select>
+                        </div>
+                    </div>
+                    <select id="img_${i}">${opts}</select>
+                `;
+                c.appendChild(div);
             }
         }
 
-        function setCam(type, val, btn) {
-            document.getElementById('val-' + type).value = val;
-            let container = document.getElementById('grp-' + type);
-            container.querySelectorAll('.cam-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+        function addLora() {
+            let d = document.createElement('div'); d.style.marginBottom="5px";
+            d.innerHTML = `
+                <div style="display:flex; gap:5px;">
+                    <select class="lora-sel"><option value="">None</option>${availLoras.map(l=>`<option>${l}</option>`)}</select>
+                    <input type="number" class="lora-w" value="0.8" step="0.1" style="width:50px;">
+                    <span onclick="this.parentElement.remove()" style="color:#d32f2f; cursor:pointer; font-weight:bold;">✕</span>
+                </div>`;
+            document.getElementById('lora-container').appendChild(d);
         }
 
-        function addLoraSlot() {
-            let container = document.getElementById('lora-container');
-            let div = document.createElement('div');
-            div.className = 'lora-item';
-            let options = availableLoras.map(l => `<option value="${l}">${l}</option>`).join('');
-            div.innerHTML = `
-                <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                    <span style="font-size:11px; color:#888;">LoRA</span>
-                    <span class="btn-del" onclick="this.parentElement.parentElement.remove()">✕</span>
-                </div>
-                <select class="lora-select"><option value="None">Select LoRA...</option>${options}</select>
-                <div class="slider-row">
-                    <input type="range" class="lora-weight" min="0" max="2" step="0.1" value="0.8" oninput="this.nextElementSibling.innerText=this.value">
-                    <span class="val-badge">0.8</span>
-                </div>
-            `;
-            container.appendChild(div);
-        }
-
+        // INIT
         async function init() {
-            try {
-                // Models
-                let ckpts = await (await fetch('/api/checkpoints')).json();
-                let sel = document.getElementById('checkpoint');
-                sel.innerHTML = "";
-                ckpts.checkpoints.forEach(m => {
-                    let opt = new Option(m, m);
-                    if(m.includes('flux') || m.includes('klein')) opt.selected = true;
-                    sel.add(opt);
-                });
+            let [ckpts, loras, imgs] = await Promise.all([
+                fetch('/api/checkpoints').then(r=>r.json()),
+                fetch('/api/loras').then(r=>r.json()),
+                fetch('/api/images').then(r=>r.json())
+            ]);
+            
+            let s=document.getElementById('checkpoint'); s.innerHTML="";
+            ckpts.checkpoints.forEach(x=>s.add(new Option(x,x)));
 
-                // Loras
-                let lrs = await (await fetch('/api/loras')).json();
-                availableLoras = lrs.loras;
-                
-                // Images
-                let imgs = await (await fetch('/api/images')).json();
-                let imgSelects = document.querySelectorAll('.img-select');
-                
-                imgSelects.forEach(s => {
-                    s.innerHTML = "";
-                    if (imgs.images.length === 0) {
-                        s.add(new Option("No images found (Upload to bot!)", ""));
-                    } else {
-                        imgs.images.forEach(im => s.add(new Option(im, im)));
-                    }
-                });
-
-            } catch(e) { 
-                // alert("Connection error. Is server running?"); 
-            }
+            availLoras = loras.loras;
+            availImgs = imgs.images;
+            
+            renderImages(); // Рисуем слоты картинок после загрузки списка
         }
+        init();
 
-        function sendData() {
-            let loraList = [];
-            document.querySelectorAll('.lora-item').forEach(item => {
-                let name = item.querySelector('.lora-select').value;
-                let weight = item.querySelector('.lora-weight').value;
-                if(name !== "None") loraList.push({ name: name, weight: parseFloat(weight) });
-            });
-
+        function send() {
             let data = {
                 checkpoint: document.getElementById('checkpoint').value,
                 resolution: document.getElementById('resolution').value,
                 steps: document.getElementById('steps').value,
                 cfg: document.getElementById('cfg').value,
                 seed: document.getElementById('seed').value,
+                
                 prompt_pos: document.getElementById('pos').value,
                 prompt_neg: document.getElementById('neg').value,
-                loras: loraList,
-                cam_rot: parseInt(document.getElementById('val-rot').value),
-                cam_ang: parseInt(document.getElementById('val-ang').value),
-                cam_dist: parseInt(document.getElementById('val-dist').value),
                 
-                // Images
-                img1: document.getElementById('img1').value,
-                img2: document.getElementById('img2').value,
-                img2_on: document.getElementById('t2').classList.contains('on'),
-                img3: document.getElementById('img3').value,
-                img3_on: document.getElementById('t3').classList.contains('on'),
+                cam_rot: document.getElementById('val-rot').value,
+                cam_ang: document.getElementById('val-ang').value,
+                cam_dist: document.getElementById('val-dist').value,
+                
                 ref_scale: document.getElementById('ref_scale').value,
-
-                ctx: document.getElementById('inp_ctx').value,
-                rescale: document.getElementById('inp_res').value
+                ctx: document.getElementById('ctx').value,
+                rescale: document.getElementById('rescale').value,
+                
+                loras: [],
+                refs: []
             };
+
+            // Loras
+            document.querySelectorAll('.lora-sel').forEach((s,i)=>{
+                if(s.value) data.loras.push({name:s.value, weight: parseFloat(document.querySelectorAll('.lora-w')[i].value)});
+            });
+
+            // Images 1-6
+            for(let i=1; i<=6; i++) {
+                let imgVal = document.getElementById('img_'+i).value;
+                if(imgVal) {
+                    data.refs.push({
+                        idx: i,
+                        image: imgVal,
+                        active: document.getElementById('active_'+i).classList.contains('active'),
+                        flip: document.getElementById('flip_'+i).classList.contains('active'),
+                        rot: document.getElementById('rot_'+i).value
+                    });
+                }
+            }
             tg.sendData(JSON.stringify(data));
         }
-
-        init();
     </script>
 </body>
 </html>
