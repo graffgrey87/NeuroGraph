@@ -2,7 +2,9 @@ import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-# --- CONFIG ---
+# ==========================================
+# ⚙️ CONFIG & AUTH
+# ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID", "")
 ALLOWED_USERS = [int(x) for x in raw_ids.split(",") if x.strip().isdigit()] if raw_ids else []
@@ -27,7 +29,9 @@ user_data = {}
 
 if not BOT_TOKEN: sys.exit("❌ TOKEN MISSING")
 
-# --- UTILS ---
+# ==========================================
+# 🛠 UTILS
+# ==========================================
 def get_user_data(uid):
     if uid not in user_data:
         user_data[uid] = {
@@ -48,6 +52,44 @@ async def check_auth(update):
         return False
     return True
 
+def fix_paths_for_linux(workflow):
+    for nid, node in workflow.items():
+        if "inputs" in node:
+            for key, val in node["inputs"].items():
+                if isinstance(val, str) and "\\" in val:
+                    node["inputs"][key] = val.replace("\\", "/")
+    return workflow
+
+def find_node_id(workflow, class_type_list):
+    if isinstance(workflow, dict):
+        for node_id, node_data in workflow.items():
+            if node_data.get("class_type") in class_type_list: return node_id
+    return None
+
+def get_lora_names(uid):
+    names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
+    data = get_user_data(uid)
+    if data['wf'] not in WORKFLOWS: return names
+    target = WORKFLOWS[data['wf']]['file']
+    
+    if not os.path.exists(target): return names
+    try:
+        with open(target, "r", encoding="utf-8") as f: wf = json.load(f)
+        nid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
+        if nid:
+            inputs = wf[nid]["inputs"]
+            for i in range(1, 5):
+                key = f"lora_{i}"
+                if key in inputs and "lora" in inputs[key]:
+                    raw = inputs[key]["lora"]
+                    clean = raw.replace("\\", "/").split("/")[-1]
+                    clean = clean.replace(".safetensors", "").replace("_", " ")
+                    if len(clean) > 20: clean = clean[:18] + ".."
+                    names[i] = clean
+    except: pass
+    return names
+
+# --- API ---
 def upload_image(file_bytes, file_name):
     try:
         files = {'image': (file_name, file_bytes)}
@@ -80,11 +122,39 @@ def get_main_kb(uid):
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
-# --- HANDLERS ---
+def get_lora_kb(uid):
+    d = get_user_data(uid)
+    real_names = get_lora_names(uid)
+    kb = []
+    for i in range(1, 5):
+        val = d['loras'].get(i, 0.0)
+        status = f"✅ {val}" if val > 0 else "❌ OFF"
+        kb.append([InlineKeyboardButton(f"{i}. {real_names[i]} | {status}", callback_data=f"edit_lora_{i}")])
+    kb.append([InlineKeyboardButton("🔙 Закрыть", callback_data="close_lora")])
+    return InlineKeyboardMarkup(kb)
+
+def get_links_kb():
+    base = f"https://{RUNPOD_ID}"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎨 ComfyUI", url=f"{base}-{COMFY_PORT}.proxy.runpod.net/")],
+        [InlineKeyboardButton("🖼 Gallery", url=f"{base}-8083.proxy.runpod.net/"), InlineKeyboardButton("🧠 CivitAI", url=f"{base}-8082.proxy.runpod.net/")],
+        [InlineKeyboardButton("❌ Close", callback_data="close_links")]
+    ])
+
+def get_batch_kb():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("1", callback_data="batch_1"), InlineKeyboardButton("2", callback_data="batch_2"), InlineKeyboardButton("4", callback_data="batch_4")],
+        [InlineKeyboardButton("⌨️ Custom", callback_data="batch_custom")]
+    ])
+
+# ==========================================
+# 🎮 HANDLERS
+# ==========================================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v6.1**\nPod: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v6.1**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,11 +169,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if resp:
             real = resp.get("name", fname)
             get_user_data(uid)['image'] = real
-            await msg.edit_text(f"✅ Фото: `{real}`\nДоступно во всех режимах!", parse_mode="Markdown")
+            await msg.edit_text(f"✅ Фото: `{real}`", parse_mode="Markdown")
         else: await msg.edit_text("❌ Ошибка")
     except Exception as e: await msg.edit_text(f"Error: {e}")
 
-# --- WEBAPP (FLUX PRO) ---
+# --- WEBAPP FLUX ---
 async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
@@ -111,19 +181,14 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = json.loads(update.effective_message.web_app_data.data)
         with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f: wf = json.load(f)
 
-        # 1. MODEL & SETTINGS
-        # Diffusion (116:129)
+        # 1. MODEL
         if "116:129" in wf:
             wf["116:129"]["inputs"]["model_name"] = data["ckpt"]
             wf["116:129"]["inputs"]["weight_dtype"] = data["dtype"]
-            if "sage_attention" in wf["116:129"]["inputs"]:
-                wf["116:129"]["inputs"]["sage_attention"] = data["sage"]
+            if "sage_attention" in wf["116:129"]["inputs"]: wf["116:129"]["inputs"]["sage_attention"] = data["sage"]
         
-        # CLIP (116:120)
-        if "116:120" in wf: wf["116:120"]["inputs"]["clip_name"] = data["clip"]
-        
-        # VAE (116:115)
-        if "116:115" in wf: wf["116:115"]["inputs"]["vae_name"] = data["vae"]
+        if "116:120" in wf and data["clip"]: wf["116:120"]["inputs"]["clip_name"] = data["clip"]
+        if "116:115" in wf and data["vae"]: wf["116:115"]["inputs"]["vae_name"] = data["vae"]
 
         # 2. GENERAL
         wf["101"]["inputs"]["aspect_ratio"] = data["res"]
@@ -133,28 +198,26 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         wf["161"]["inputs"]["value"] = data["pos"]
         wf["162"]["inputs"]["value"] = data["neg"]
         
-        # 3. CAMERA
+        # 3. CONTROLS
         wf["146"]["inputs"]["value"] = int(data["rot"])
         wf["144"]["inputs"]["value"] = int(data["ang"])
         wf["151"]["inputs"]["value"] = int(data["dist"])
-
-        # 4. INPAINT & REFS SCALE
         wf["228"]["inputs"]["Xi"] = float(data["ctx"]); wf["228"]["inputs"]["Xf"] = float(data["ctx"])
         wf["229"]["inputs"]["Xi"] = float(data["resc"]); wf["229"]["inputs"]["Xf"] = float(data["resc"])
         wf["139"]["inputs"]["Xi"] = float(data["rscale"]); wf["139"]["inputs"]["Xf"] = float(data["rscale"])
 
-        # 5. LORAS
+        # 4. LORAS
         if "153" in wf:
             for i in range(1,14): 
                 if f"lora_{i}" in wf["153"]["inputs"]: wf["153"]["inputs"][f"lora_{i}"] = {"on": False}
             for i, l in enumerate(data["loras"]):
                 wf["153"]["inputs"][f"lora_{i+1}"] = {"on": True, "lora": l["name"], "strength": l["weight"]}
 
-        # 6. REFS (1-6)
+        # 5. REFS
         loaders = {1:"76", 2:"104", 3:"105", 4:"182", 5:"183", 6:"184"}
-        for i in range(1,7):
+        for i in range(1,7): # Reset all
             gid = 211+i
-            if f"{gid}:214" in wf: wf[f"{gid}:214"]["inputs"]["value"] = False # Reset
+            if f"{gid}:214" in wf: wf[f"{gid}:214"]["inputs"]["value"] = False
         
         for r in data["refs"]:
             idx = r["idx"]
@@ -172,7 +235,7 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"WebApp Error: {e}")
         traceback.print_exc()
 
-# --- TEXT & LEGACY ---
+# --- TEXT HANDLER ---
 async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
@@ -180,29 +243,100 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = get_user_data(uid)
     track_message(uid, update.message.message_id)
 
-    # ... СЮДА ВСТАВИТЬ ЛОГИКУ BATCH/DATASET ИЗ 5.3 (Она в полном файле выше) ...
-    # (Я сократил этот блок для читаемости, но в полной версии он есть)
-    
-    if text == "🚀 ГЕНЕРАЦИЯ":
-        if d['wf'] == 'flux':
-            m = await update.message.reply_text("⚠️ Flux используй через ПУЛЬТ!")
+    # BATCH
+    if d.get('awaiting_custom_batch'):
+        if text.isdigit():
+            d['batch'] = int(text)
+            d['awaiting_custom_batch'] = False
+            m = await update.message.reply_text(f"🔢 Batch: {text}", reply_markup=get_main_kb(uid))
             track_message(uid, m.message_id)
-        else:
-            await run_legacy_gen(update, context, uid)
+        return
 
-    elif "Режим:" in text:
-        # Переключение
-        keys = list(WORKFLOWS.keys())
-        # ... Логика переключения ...
-        await start(update, context)
+    # SET NAME
+    if d.get('awaiting_dataset_name'):
+        d['dataset_name'] = text
+        d['awaiting_dataset_name'] = False
+        m = await update.message.reply_text(f"🏷 Set: {text}", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
+        return
 
-    # Очистка, Ссылки и т.д.
-    elif text == "🗑 ОЧИСТИТЬ":
+    # LORA WEIGHT INPUT
+    if d['awaiting_lora']:
+        try:
+            val = float(text.replace(",", "."))
+            d['loras'][d['awaiting_lora']] = val
+            d['awaiting_lora'] = None
+            m = await update.message.reply_text(f"Set: {val}", reply_markup=get_lora_kb(uid))
+            track_message(uid, m.message_id)
+        except: await update.message.reply_text("Number required")
+        return
+
+    # COMMANDS
+    if text == "🗑 ОЧИСТИТЬ":
         for mid in reversed(d['msg_ids']):
             try: await context.bot.delete_message(uid, mid)
             except: pass
         d['msg_ids'] = []
-        await update.message.reply_text("🧹", reply_markup=get_main_kb(uid))
+        m = await update.message.reply_text("🧹", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
+
+    elif text == "🎛 LORA MIXER":
+        m = await update.message.reply_text("🎛 Mixer:", reply_markup=get_lora_kb(uid))
+        track_message(uid, m.message_id)
+
+    elif text == "🌐 Ссылки":
+        m = await update.message.reply_text("Links:", reply_markup=get_links_kb())
+        track_message(uid, m.message_id)
+
+    elif text.startswith("🔢"):
+        m = await update.message.reply_text("Count:", reply_markup=get_batch_kb())
+        track_message(uid, m.message_id)
+
+    elif text.startswith("🏷"):
+        d['awaiting_dataset_name'] = True
+        m = await update.message.reply_text("Enter name:")
+        track_message(uid, m.message_id)
+
+    elif text.startswith("🔄"):
+        keys = list(WORKFLOWS.keys())
+        d['wf'] = keys[(keys.index(d['wf']) + 1) % len(keys)]
+        m = await update.message.reply_text(f"WF: {WORKFLOWS[d['wf']]['name']}", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
+
+    elif "Режим:" in text:
+        d['mode'] = 'nsfw' if d['mode'] == 'normal' else 'normal'
+        m = await update.message.reply_text(f"Mode: {d['mode'].upper()}", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
+
+    elif text == "🚀 ГЕНЕРАЦИЯ":
+        if d['wf'] == 'flux':
+            m = await update.message.reply_text("⚠️ Use WebApp for Flux!")
+            track_message(uid, m.message_id)
+        else:
+            await run_legacy_gen(update, context, uid)
+
+# --- CALLBACKS (This fixes v5.3 buttons!) ---
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    uid = q.from_user.id
+    d = get_user_data(uid)
+    await q.answer()
+    
+    if q.data.startswith("batch_"):
+        if "custom" in q.data:
+            d['awaiting_custom_batch'] = True
+            await q.message.edit_text("Enter number:")
+        else:
+            d['batch'] = int(q.data.split("_")[1])
+            await q.message.edit_text(f"Batch: {d['batch']}")
+            await context.bot.send_message(uid, "Updated", reply_markup=get_main_kb(uid))
+    
+    elif q.data.startswith("edit_lora_"):
+        slot = int(q.data.split("_")[2])
+        d['awaiting_lora'] = slot
+        await q.message.edit_text(f"Enter weight for LoRA {slot}:")
+
+    elif q.data in ["close_links", "close_lora"]: await q.message.delete()
 
 # --- EXECUTION ---
 async def run_workflow(context, uid, wf, status_msg, batch_idx):
@@ -230,9 +364,7 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
         
         if found: await status_msg.delete()
         else: await status_msg.edit_text("⚠️ No output")
-
-    except Exception as e:
-        await context.bot.send_message(uid, f"Runtime Error: {e}")
+    except Exception as e: await context.bot.send_message(uid, f"Runtime Error: {e}")
 
 async def run_legacy_gen(update, context, uid):
     d = get_user_data(uid)
@@ -245,19 +377,24 @@ async def run_legacy_gen(update, context, uid):
     status = await update.message.reply_text(f"🚀 Running {d['batch']}x {cfg['name']}...")
     track_message(uid, status.message_id)
 
-    # ГЕНЕРАЦИЯ БАТЧЕЙ (КАК В 5.3)
     for i in range(d['batch']):
         with open(cfg['file'], "r") as f: wf = json.load(f)
+        wf = fix_paths_for_linux(wf)
         
+        # Inject Photo
         if cfg['need_photo']:
-            # Простой поиск нод LoadImage
-            for nid, n in wf.items():
-                if n.get("class_type") in ["LoadImage", "LoadImageMask"]: n["inputs"]["image"] = d['image']
+            img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
+            if img_node: wf[img_node]["inputs"]["image"] = d['image']
         
-        # Seed randomize
-        for nid, n in wf.items():
-            if n.get("class_type") in ["EasySeed", "Seed", "KSampler"]: 
-                if "seed" in n["inputs"]: n["inputs"]["seed"] = random.randint(1, 10**15)
+        # Inject Seed
+        seed_node = find_node_id(wf, ["EasySeed", "Seed", "KSampler"])
+        if seed_node and "seed" in wf[seed_node]["inputs"]: wf[seed_node]["inputs"]["seed"] = random.randint(1, 10**15)
+
+        # Inject Text (Simple)
+        txt_node = find_node_id(wf, ["CLIPTextEncode", "PrimitiveString"])
+        if txt_node: 
+             k = "string" if "string" in wf[txt_node]["inputs"] else "text"
+             wf[txt_node]["inputs"][k] = PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW
 
         asyncio.create_task(run_workflow(context, uid, wf, status, i+1))
 
@@ -266,6 +403,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(CallbackQueryHandler(handle_callback)) # <--- ВОТ ЧТО Я ЗАБЫЛ В ПРОШЛЫЙ РАЗ!
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v6.1 Started on {RUNPOD_ID}")
+    print(f"✅ Bot v6.2 Fixed Started on {RUNPOD_ID}")
     app.run_polling()
