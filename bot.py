@@ -1,5 +1,5 @@
 import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
@@ -16,13 +16,14 @@ BASE_DIR = "/workspace"
 CLIENT_ID = str(uuid.uuid4())
 WEBAPP_URL = f"https://{RUNPOD_ID}-8099.proxy.runpod.net"
 
-# ПУТИ
+# ПУТИ К ФАЙЛАМ
 WORKFLOWS = {
     "edit": { "file": os.path.join(BASE_DIR, "workflow_api.json"), "name": "🎨 Редакт (Qwen)", "need_photo": True },
     "gen":  { "file": os.path.join(BASE_DIR, "workflow_gen.json"), "name": "✨ Генерация (Legacy)", "need_photo": False },
     "flux": { "file": os.path.join(BASE_DIR, "TI2I_Flux2_Klein.json"), "name": "🚀 Flux Pro", "need_photo": False }
 }
 
+# ШАБЛОНЫ ИЗ 5.3
 PROMPT_NORMAL = "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 PROMPT_NSFW = "На фото крупным планом показана высокая девушка с изображения 1, которая __действие_nsfw__ __место__. На ней __наряд_nsfw__. Она __доп_действие_nsfw__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 
@@ -31,24 +32,101 @@ user_data = {}
 if not BOT_TOKEN: sys.exit("❌ TOKEN MISSING")
 
 # ==========================================
-# 🛠 REPAIR & UTILS
+# 🛠 UTILS
 # ==========================================
+def get_user_data(uid):
+    if uid not in user_data:
+        user_data[uid] = {
+            'image': None, 'mode': 'normal', 'wf': 'flux', 'batch': 1, 
+            'dataset_name': 'Batch', 'msg_ids': [], 
+            'loras': {1:0.0, 2:0.0, 3:0.0, 4:0.0}, # Для Legacy
+            'flux_store': None, # Память Flux
+            'awaiting_lora': None, 'awaiting_custom_batch': False, 'awaiting_dataset_name': False
+        }
+    return user_data[uid]
+
+def track_message(uid, mid):
+    """Запоминает ID сообщений для очистки"""
+    d = get_user_data(uid)
+    if mid not in d['msg_ids']: d['msg_ids'].append(mid)
+    if len(d['msg_ids']) > 200: d['msg_ids'].pop(0)
+
 def repair_workflow(wf):
-    """Исправляет пути Windows -> Linux и проверяет пустоты"""
+    """Базовый ремонт путей и проверка на пустоту"""
     clean_wf = {}
     for nid, node in wf.items():
         if not isinstance(node, dict): continue
-        
+        # Fix Windows Paths
         if "inputs" in node:
             for k, v in node["inputs"].items():
                 if isinstance(v, str): node["inputs"][k] = v.replace("\\", "/")
-        
-        # Если вдруг опять пропадут имена (страховка)
+        # Safety check
         if "class_type" not in node and "inputs" in node:
             node["class_type"] = "Reroute"
-
         clean_wf[nid] = node
     return clean_wf
+
+def apply_flux_settings(wf, data):
+    """Применяет настройки WebApp к JSON с переводом разрешений"""
+    # 1. MODEL
+    if "116:129" in wf:
+        wf["116:129"]["inputs"]["model_name"] = data["ckpt"]
+        wf["116:129"]["inputs"]["weight_dtype"] = data["dtype"]
+        if "sage_attention" in wf["116:129"]["inputs"]: wf["116:129"]["inputs"]["sage_attention"] = data["sage"]
+    
+    if "116:120" in wf and data["clip"]: wf["116:120"]["inputs"]["clip_name"] = data["clip"]
+    if "116:115" in wf and data["vae"]: wf["116:115"]["inputs"]["vae_name"] = data["vae"]
+
+    # 2. PARAMS + RESOLUTION FIX
+    RES_MAP = {
+        "1024x1024 (Square)": "1:1 (Square)", "1600x900 (Landscape)": "16:9 (Landscape)",
+        "900x1600 (Portrait)": "9:16 (Portrait)", "1216x832 (Landscape)": "3:2 (Landscape)",
+        "832x1216 (Portrait)": "2:3 (Portrait)"
+    }
+    raw_res = data["res"]
+    wf["101"]["inputs"]["aspect_ratio"] = RES_MAP.get(raw_res, raw_res)
+
+    wf["117"]["inputs"]["seed"] = int(data["seed"]) if int(data["seed"]) != -1 else random.randint(1, 10**15)
+    wf["119"]["inputs"]["Xi"] = int(data["steps"]); wf["119"]["inputs"]["Xf"] = int(data["steps"])
+    wf["118"]["inputs"]["Xi"] = float(data["cfg"]); wf["118"]["inputs"]["Xf"] = float(data["cfg"])
+    wf["161"]["inputs"]["value"] = data["pos"]
+    wf["162"]["inputs"]["value"] = data["neg"]
+    
+    # 3. CONTROLS
+    wf["146"]["inputs"]["value"] = int(data["rot"]); wf["144"]["inputs"]["value"] = int(data["ang"]) 
+    wf["151"]["inputs"]["value"] = int(data["dist"])
+    wf["228"]["inputs"]["Xi"] = float(data["ctx"]); wf["228"]["inputs"]["Xf"] = float(data["ctx"])
+    wf["229"]["inputs"]["Xi"] = float(data["resc"]); wf["229"]["inputs"]["Xf"] = float(data["resc"])
+    wf["139"]["inputs"]["Xi"] = float(data["rscale"]); wf["139"]["inputs"]["Xf"] = float(data["rscale"])
+
+    # 4. LORAS
+    if "153" in wf:
+        for i in range(1,14): 
+            if f"lora_{i}" in wf["153"]["inputs"]: wf["153"]["inputs"][f"lora_{i}"] = {"on": False}
+        for i, l in enumerate(data["loras"]):
+            wf["153"]["inputs"][f"lora_{i+1}"] = {"on": True, "lora": l["name"], "strength": l["weight"]}
+
+    # 5. REFS
+    loaders = {1:"76", 2:"104", 3:"105", 4:"182", 5:"183", 6:"184"}
+    for i in range(1,7): 
+        gid = 211+i
+        if f"{gid}:214" in wf: wf[f"{gid}:214"]["inputs"]["value"] = False
+    
+    for r in data["refs"]:
+        idx = r["idx"]
+        gid = 211+idx
+        if loaders[idx] in wf: wf[loaders[idx]]["inputs"]["image"] = r["image"]
+        if f"{gid}:214" in wf: wf[f"{gid}:214"]["inputs"]["value"] = r["active"]
+        if f"{gid}:213" in wf: wf[f"{gid}:213"]["inputs"]["switch"] = r["flip"]
+        if f"{gid}:209" in wf: wf[f"{gid}:209"]["inputs"]["rotation"] = r["rot"]
+    
+    return wf
+
+async def check_auth(update):
+    if ALLOWED_USERS and update.effective_user.id not in ALLOWED_USERS:
+        await update.message.reply_text("⛔ Private Bot")
+        return False
+    return True
 
 def find_node_id(workflow, class_type_list):
     if isinstance(workflow, dict):
@@ -78,26 +156,6 @@ def get_lora_names(uid):
                     names[i] = clean
     except: pass
     return names
-
-def get_user_data(uid):
-    if uid not in user_data:
-        user_data[uid] = {
-            'image': None, 'mode': 'normal', 'wf': 'flux', 'batch': 1, 
-            'dataset_name': 'Batch', 'msg_ids': [], 'loras': {1:0.0, 2:0.0, 3:0.0, 4:0.0},
-            'awaiting_lora': None, 'awaiting_custom_batch': False, 'awaiting_dataset_name': False
-        }
-    return user_data[uid]
-
-def track_message(uid, mid):
-    d = get_user_data(uid)
-    if mid not in d['msg_ids']: d['msg_ids'].append(mid)
-    if len(d['msg_ids']) > 100: d['msg_ids'].pop(0)
-
-async def check_auth(update):
-    if ALLOWED_USERS and update.effective_user.id not in ALLOWED_USERS:
-        await update.message.reply_text("⛔ Private Bot")
-        return False
-    return True
 
 # --- API ---
 def upload_image(file_bytes, file_name):
@@ -140,6 +198,7 @@ def get_main_kb(uid):
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
 def get_lora_kb(uid):
+    # Для Legacy режимов
     d = get_user_data(uid)
     real_names = get_lora_names(uid)
     kb = []
@@ -163,6 +222,7 @@ def get_batch_kb():
         [InlineKeyboardButton("1", callback_data="batch_1"), InlineKeyboardButton("2", callback_data="batch_2"), InlineKeyboardButton("4", callback_data="batch_4")],
         [InlineKeyboardButton("⌨️ Custom", callback_data="batch_custom")]
     ])
+
 # ==========================================
 # 🎮 HANDLERS
 # ==========================================
@@ -170,12 +230,13 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.2 ResFix**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.5 Final**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
+    track_message(uid, update.message.message_id)
     msg = await update.message.reply_text("📥 Сохраняю...")
     track_message(uid, msg.message_id)
     try:
@@ -189,104 +250,39 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: await msg.edit_text("❌ Ошибка")
     except Exception as e: await msg.edit_text(f"Error: {e}")
 
-# --- WEBAPP (FLUX) ---
+# --- WEBAPP (FLUX + MEMORY + PREVIEW) ---
 async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
     try:
         data = json.loads(update.effective_message.web_app_data.data)
+        d = get_user_data(uid)
+        d['flux_store'] = data # 💾 Запоминаем
+        
+        # 🖼 ПРЕВЬЮ РЕФЕРЕНСОВ
+        active_refs = [r for r in data['refs'] if r['active']]
+        if active_refs:
+            m1 = await context.bot.send_message(uid, f"👀 **Активные референсы ({len(active_refs)}):**", parse_mode="Markdown")
+            track_message(uid, m1.message_id)
+            for r in active_refs:
+                try:
+                    img_data = get_view(r['image'], "", "input")
+                    m = await context.bot.send_photo(uid, img_data, caption=f"Ref {r['idx']} (Rot: {r['rot']})")
+                    track_message(uid, m.message_id)
+                except: pass
+
+        # ЗАПУСК
         with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f: wf = json.load(f)
-
-        # 1. MODEL
-        if "116:129" in wf:
-            wf["116:129"]["inputs"]["model_name"] = data["ckpt"]
-            wf["116:129"]["inputs"]["weight_dtype"] = data["dtype"]
-            if "sage_attention" in wf["116:129"]["inputs"]: wf["116:129"]["inputs"]["sage_attention"] = data["sage"]
+        wf = apply_flux_settings(wf, data)
         
-        if "116:120" in wf and data["clip"]: wf["116:120"]["inputs"]["clip_name"] = data["clip"]
-        if "116:115" in wf and data["vae"]: wf["116:115"]["inputs"]["vae_name"] = data["vae"]
-
-        # 2. PARAMS (С ПЕРЕВОДЧИКОМ РАЗРЕШЕНИЙ)
-        
-        # Словарь замены старых значений на новые
-        RES_MAP = {
-            "1024x1024 (Square)": "1:1 (Square)",
-            "1600x900 (Landscape)": "16:9 (Landscape)",
-            "900x1600 (Portrait)": "9:16 (Portrait)",
-            "1216x832 (Landscape)": "3:2 (Landscape)",
-            "832x1216 (Portrait)": "2:3 (Portrait)",
-            "1344x768 (Landscape)": "16:9 (Landscape)", # На всякий случай
-            "768x1344 (Portrait)": "9:16 (Portrait)"
-        }
-        
-        raw_res = data["res"]
-        # Если пришло старое значение - меняем на новое, иначе оставляем как есть
-        wf["101"]["inputs"]["aspect_ratio"] = RES_MAP.get(raw_res, raw_res)
-
-        wf["117"]["inputs"]["seed"] = int(data["seed"]) if int(data["seed"]) != -1 else random.randint(1, 10**15)
-        wf["119"]["inputs"]["Xi"] = int(data["steps"]); wf["119"]["inputs"]["Xf"] = int(data["steps"])
-        wf["118"]["inputs"]["Xi"] = float(data["cfg"]); wf["118"]["inputs"]["Xf"] = float(data["cfg"])
-        wf["161"]["inputs"]["value"] = data["pos"]
-        wf["162"]["inputs"]["value"] = data["neg"]
-        
-        # 3. CONTROLS
-        wf["146"]["inputs"]["value"] = int(data["rot"]); wf["144"]["inputs"]["value"] = int(data["ang"]); wf["151"]["inputs"]["value"] = int(data["dist"])
-        wf["228"]["inputs"]["Xi"] = float(data["ctx"]); wf["228"]["inputs"]["Xf"] = float(data["ctx"])
-        wf["229"]["inputs"]["Xi"] = float(data["resc"]); wf["229"]["inputs"]["Xf"] = float(data["resc"])
-        wf["139"]["inputs"]["Xi"] = float(data["rscale"]); wf["139"]["inputs"]["Xf"] = float(data["rscale"])
-
-        # 4. LORAS
-        if "153" in wf:
-            for i in range(1,14): 
-                if f"lora_{i}" in wf["153"]["inputs"]: wf["153"]["inputs"][f"lora_{i}"] = {"on": False}
-            for i, l in enumerate(data["loras"]):
-                wf["153"]["inputs"][f"lora_{i+1}"] = {"on": True, "lora": l["name"], "strength": l["weight"]}
-
-        # 5. REFS
-        loaders = {1:"76", 2:"104", 3:"105", 4:"182", 5:"183", 6:"184"}
-        for i in range(1,7): 
-            gid = 211+i
-            if f"{gid}:214" in wf: wf[f"{gid}:214"]["inputs"]["value"] = False
-        
-        for r in data["refs"]:
-            idx = r["idx"]
-            gid = 211+idx
-            if loaders[idx] in wf: wf[loaders[idx]]["inputs"]["image"] = r["image"]
-            if f"{gid}:214" in wf: wf[f"{gid}:214"]["inputs"]["value"] = r["active"]
-            if f"{gid}:213" in wf: wf[f"{gid}:213"]["inputs"]["switch"] = r["flip"]
-            if f"{gid}:209" in wf: wf[f"{gid}:209"]["inputs"]["rotation"] = r["rot"]
-
-        # RUN
         msg = await update.message.reply_text(f"🎬 Flux Pro: {data['res']}")
+        track_message(uid, msg.message_id)
         asyncio.create_task(run_workflow(context, uid, wf, msg, 1))
+        
     except Exception as e:
-        await update.message.reply_text(f"WebApp Error: {e}")
+        m = await update.message.reply_text(f"WebApp Error: {e}")
+        track_message(uid, m.message_id)
         traceback.print_exc()
-
-# --- CALLBACKS ---
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    uid = q.from_user.id
-    d = get_user_data(uid)
-    await q.answer()
-    
-    if q.data.startswith("batch_"):
-        if "custom" in q.data:
-            d['awaiting_custom_batch'] = True
-            await q.message.edit_text("⌨️ **Введите число**:", parse_mode="Markdown")
-        else:
-            d['batch'] = int(q.data.split("_")[1])
-            await q.message.delete()
-            m = await context.bot.send_message(uid, f"🔢 Batch: **{d['batch']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
-            track_message(uid, m.message_id)
-    
-    elif q.data.startswith("edit_lora_"):
-        slot = int(q.data.split("_")[2])
-        d['awaiting_lora'] = slot
-        names = get_lora_names(uid)
-        await q.message.edit_text(f"✍️ **{names[slot]}**\nВес (0.1 - 1.0):", parse_mode="Markdown")
-
-    elif q.data in ["close_links", "close_lora"]: await q.message.delete()
 
 # --- TEXT HANDLER ---
 async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -296,7 +292,6 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = get_user_data(uid)
     track_message(uid, update.message.message_id)
 
-    # INPUTS
     if d.get('awaiting_custom_batch'):
         if text.isdigit():
             d['batch'] = int(text)
@@ -305,7 +300,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: m = await update.message.reply_text("Введите число")
         track_message(uid, m.message_id)
         return
-
+    
     if d.get('awaiting_dataset_name'):
         d['dataset_name'] = text
         d['awaiting_dataset_name'] = False
@@ -329,11 +324,27 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try: await context.bot.delete_message(uid, mid)
             except: pass
         d['msg_ids'] = []
-        m = await update.message.reply_text("🧹", reply_markup=get_main_kb(uid))
+        m = await update.message.reply_text("🧹 Чат очищен", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
+    elif text == "🚀 ГЕНЕРАЦИЯ":
+        if d['wf'] == 'flux':
+            # 🚀 ЗАПУСК ИЗ ПАМЯТИ
+            if d['flux_store']:
+                data = d['flux_store']
+                m = await update.message.reply_text(f"🚀 Повтор Flux ({data['res']})...")
+                track_message(uid, m.message_id)
+                with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f: wf = json.load(f)
+                wf = apply_flux_settings(wf, data)
+                asyncio.create_task(run_workflow(context, uid, wf, m, 1))
+            else:
+                m = await update.message.reply_text("⚠️ Сначала настрой через Пульт!")
+                track_message(uid, m.message_id)
+        else:
+            await run_legacy_gen(update, context, uid)
+
     elif text == "🎛 LORA MIXER":
-        m = await update.message.reply_text("🎛 Лорки:", reply_markup=get_lora_kb(uid))
+        m = await update.message.reply_text("🎛 Лорки (Legacy):", reply_markup=get_lora_kb(uid))
         track_message(uid, m.message_id)
 
     elif text == "🌐 Ссылки":
@@ -360,20 +371,13 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         m = await update.message.reply_text(f"Режим: {d['mode'].upper()}", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
-    elif text == "🚀 ГЕНЕРАЦИЯ":
-        if d['wf'] == 'flux':
-            m = await update.message.reply_text("Use WebApp!")
-            track_message(uid, m.message_id)
-        else:
-            await run_legacy_gen(update, context, uid)
-            
     else:
-        # Manual Prompt
         if d['wf'] != 'flux':
             await run_legacy_gen(update, context, uid, manual_prompt=text)
 
 # --- EXECUTION ---
 async def run_workflow(context, uid, wf, status_msg, batch_idx):
+    start_time = time.time() # ⏱ СТАРТ
     try:
         res = queue_prompt(wf)
         if 'error' in res:
@@ -389,7 +393,11 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
         out = h[pid]['outputs']
         found = False
         
-        caption = f"✅ Result {batch_idx}"
+        # ⏱ СТОП
+        duration = time.time() - start_time
+        time_str = f"⏱ {duration:.1f}s"
+
+        caption = f"✅ Result {batch_idx} | {time_str}"
         for nid, dat in out.items():
             if 'text' in dat:
                 val = dat['text']
@@ -419,16 +427,13 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
         track_message(uid, m.message_id)
         return
 
-    # 🔥 ВЫБОР ШАБЛОНА
     prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
-    
     status = await update.message.reply_text(f"🚀 {d['batch']}x {cfg['name']}...")
     track_message(uid, status.message_id)
 
     for i in range(d['batch']):
         with open(cfg['file'], "r") as f: wf = json.load(f)
         
-        # Params
         if cfg['need_photo']:
             img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
             if img_node: wf[img_node]["inputs"]["image"] = d['image']
@@ -436,7 +441,6 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
         sid = find_node_id(wf, ["EasySeed", "Seed", "KSampler"])
         if sid and "seed" in wf[sid]["inputs"]: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
-        # Inject Text
         tid = find_node_id(wf, ["CLIPTextEncode", "PrimitiveString"])
         if tid: 
              k = "string" if "string" in wf[tid]["inputs"] else "text"
@@ -447,6 +451,30 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
 
         asyncio.create_task(run_workflow(context, uid, wf, status, i+1))
 
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    uid = q.from_user.id
+    d = get_user_data(uid)
+    await q.answer()
+    
+    if q.data.startswith("batch_"):
+        if "custom" in q.data:
+            d['awaiting_custom_batch'] = True
+            await q.message.edit_text("⌨️ **Введите число**:", parse_mode="Markdown")
+        else:
+            d['batch'] = int(q.data.split("_")[1])
+            await q.message.delete()
+            m = await context.bot.send_message(uid, f"🔢 Batch: **{d['batch']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+            track_message(uid, m.message_id)
+    
+    elif q.data.startswith("edit_lora_"):
+        slot = int(q.data.split("_")[2])
+        d['awaiting_lora'] = slot
+        names = get_lora_names(uid)
+        await q.message.edit_text(f"✍️ **{names[slot]}**\nВес (0.1 - 1.0):", parse_mode="Markdown")
+
+    elif q.data in ["close_links", "close_lora"]: await q.message.delete()
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler('start', start))
@@ -454,5 +482,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v7.2 ResFix Started on {RUNPOD_ID}")
+    print(f"✅ Bot v7.5 Final Started on {RUNPOD_ID}")
     app.run_polling()
