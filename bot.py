@@ -16,57 +16,63 @@ BASE_DIR = "/workspace"
 CLIENT_ID = str(uuid.uuid4())
 WEBAPP_URL = f"https://{RUNPOD_ID}-8099.proxy.runpod.net"
 
-# ПУТИ К ФАЙЛАМ
 WORKFLOWS = {
     "edit": { "file": os.path.join(BASE_DIR, "workflow_api.json"), "name": "🎨 Редакт (Qwen)", "need_photo": True },
     "gen":  { "file": os.path.join(BASE_DIR, "workflow_gen.json"), "name": "✨ Генерация (Legacy)", "need_photo": False },
     "flux": { "file": os.path.join(BASE_DIR, "TI2I_Flux2_Klein.json"), "name": "🚀 Flux Pro", "need_photo": False }
 }
 
-# ==========================================
-# 📜 ШАБЛОНЫ ПРОМПТОВ (v5.3)
-# ==========================================
-PROMPT_NORMAL = (
-    "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. "
-    "На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. "
-    "Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
-)
-
-PROMPT_NSFW = (
-    "На фото крупным планом показана высокая девушка с изображения 1, которая __действие_nsfw__ __место__. "
-    "На ней __наряд_nsfw__. Она __доп_действие_nsfw__. Её наряд выполнен в __цвет__. "
-    "Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. "
-    "Фото в стиле __стиль__, реалистичное освещение."
-)
+PROMPT_NORMAL = "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
+PROMPT_NSFW = "На фото крупным планом показана высокая девушка с изображения 1, которая __действие_nsfw__ __место__. На ней __наряд_nsfw__. Она __доп_действие_nsfw__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 
 user_data = {}
 
 if not BOT_TOKEN: sys.exit("❌ TOKEN MISSING")
 
 # ==========================================
-# 🛠 REPAIR & UTILS
+# 🛠 TARGETED REPAIR (ЛЕЧЕНИЕ КОНКРЕТНЫХ НОД)
 # ==========================================
 
+# Словарь исправления: ID Ноды -> Правильный Тип (Class Type)
+MANUAL_REPAIR_MAP = {
+    "175": "CreateList",  # "create Data List from BOOLEANs" (по входам item_0 это CreateList)
+    "194": "CreateList",  # "create LIST"
+    "222": "LogicAnd",    # "and" (input1, input2)
+    "223": "LogicNot"     # "not" (input)
+}
+
 def repair_workflow(wf):
-    """Чинит битые ноды (Reroute) и пути для Linux"""
+    """
+    1. Применяет ручные исправления типов для указанных нод.
+    2. Чинит пути Windows -> Linux.
+    3. Если есть другие пустые ноды - удаляет их (как мусор).
+    """
     clean_wf = {}
+    
     for nid, node in wf.items():
         if not isinstance(node, dict): continue
         
-        # 1. Windows Paths -> Linux
+        # 1. Исправляем пути
         if "inputs" in node:
             for k, v in node["inputs"].items():
                 if isinstance(v, str): node["inputs"][k] = v.replace("\\", "/")
-        
-        # 2. Fix Missing Class Type
+
+        # 2. Восстанавливаем типы для известных битых нод
+        if nid in MANUAL_REPAIR_MAP:
+            if "class_type" not in node:
+                print(f"🔧 Fixing Node {nid}: Restoring type -> '{MANUAL_REPAIR_MAP[nid]}'")
+                node["class_type"] = MANUAL_REPAIR_MAP[nid]
+            clean_wf[nid] = node
+            continue
+
+        # 3. Обработка остальных нод
         if "class_type" not in node:
-            if "inputs" in node:
-                # Если есть входы но нет типа - это Reroute
-                node["class_type"] = "Reroute"
-                clean_wf[nid] = node
-            # Иначе это мусор, пропускаем
+            # Если нода не в списке ручного лечения и не имеет типа -> пропускаем (считаем мусором)
+            # (Reroute логику убрали, так как она вызывала ошибки, лучше просто пропустить)
+            pass
         else:
             clean_wf[nid] = node
+            
     return clean_wf
 
 def find_node_id(workflow, class_type_list):
@@ -127,6 +133,7 @@ def upload_image(file_bytes, file_name):
     except: return None
 
 def queue_prompt(wf):
+    # ПРИМЕНЯЕМ ЛЕЧЕНИЕ
     clean_wf = repair_workflow(wf)
     try:
         data = json.dumps({"prompt": clean_wf, "client_id": CLIENT_ID}).encode('utf-8')
@@ -184,7 +191,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v6.6**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v6.8**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -388,7 +395,6 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
         out = h[pid]['outputs']
         found = False
         
-        # Получаем текст промпта (для логов в чате)
         caption = f"✅ Result {batch_idx}"
         for nid, dat in out.items():
             if 'text' in dat:
@@ -420,16 +426,13 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
         track_message(uid, m.message_id)
         return
 
-    # 🔥 ВЫБОР ШАБЛОНА ИЛИ РУЧНОГО ТЕКСТА
     prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
-    
     status = await update.message.reply_text(f"🚀 {d['batch']}x {cfg['name']}...")
     track_message(uid, status.message_id)
 
     for i in range(d['batch']):
         with open(cfg['file'], "r") as f: wf = json.load(f)
         
-        # Params
         if cfg['need_photo']:
             img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
             if img_node: wf[img_node]["inputs"]["image"] = d['image']
@@ -437,7 +440,6 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
         sid = find_node_id(wf, ["EasySeed", "Seed", "KSampler"])
         if sid and "seed" in wf[sid]["inputs"]: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
-        # Inject Text into Qwen/CLIP
         tid = find_node_id(wf, ["CLIPTextEncode", "PrimitiveString"])
         if tid: 
              k = "string" if "string" in wf[tid]["inputs"] else "text"
@@ -455,5 +457,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v6.6 Templates Started on {RUNPOD_ID}")
+    print(f"✅ Bot v6.8 TARGET FIX Started on {RUNPOD_ID}")
     app.run_polling()
