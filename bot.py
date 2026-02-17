@@ -16,6 +16,7 @@ BASE_DIR = "/workspace"
 CLIENT_ID = str(uuid.uuid4())
 WEBAPP_URL = f"https://{RUNPOD_ID}-8099.proxy.runpod.net"
 
+# ПУТИ
 WORKFLOWS = {
     "edit": { "file": os.path.join(BASE_DIR, "workflow_api.json"), "name": "🎨 Редакт (Qwen)", "need_photo": True },
     "gen":  { "file": os.path.join(BASE_DIR, "workflow_gen.json"), "name": "✨ Генерация (Legacy)", "need_photo": False },
@@ -30,49 +31,23 @@ user_data = {}
 if not BOT_TOKEN: sys.exit("❌ TOKEN MISSING")
 
 # ==========================================
-# 🛠 TARGETED REPAIR (ЛЕЧЕНИЕ КОНКРЕТНЫХ НОД)
+# 🛠 REPAIR & UTILS
 # ==========================================
-
-# Словарь исправления: ID Ноды -> Правильный Тип (Class Type)
-MANUAL_REPAIR_MAP = {
-    "175": "CreateList",  # "create Data List from BOOLEANs" (по входам item_0 это CreateList)
-    "194": "CreateList",  # "create LIST"
-    "222": "LogicAnd",    # "and" (input1, input2)
-    "223": "LogicNot"     # "not" (input)
-}
-
 def repair_workflow(wf):
-    """
-    1. Применяет ручные исправления типов для указанных нод.
-    2. Чинит пути Windows -> Linux.
-    3. Если есть другие пустые ноды - удаляет их (как мусор).
-    """
+    """Исправляет пути Windows -> Linux и проверяет пустоты"""
     clean_wf = {}
-    
     for nid, node in wf.items():
         if not isinstance(node, dict): continue
         
-        # 1. Исправляем пути
         if "inputs" in node:
             for k, v in node["inputs"].items():
                 if isinstance(v, str): node["inputs"][k] = v.replace("\\", "/")
+        
+        # Если вдруг опять пропадут имена (страховка)
+        if "class_type" not in node and "inputs" in node:
+            node["class_type"] = "Reroute"
 
-        # 2. Восстанавливаем типы для известных битых нод
-        if nid in MANUAL_REPAIR_MAP:
-            if "class_type" not in node:
-                print(f"🔧 Fixing Node {nid}: Restoring type -> '{MANUAL_REPAIR_MAP[nid]}'")
-                node["class_type"] = MANUAL_REPAIR_MAP[nid]
-            clean_wf[nid] = node
-            continue
-
-        # 3. Обработка остальных нод
-        if "class_type" not in node:
-            # Если нода не в списке ручного лечения и не имеет типа -> пропускаем (считаем мусором)
-            # (Reroute логику убрали, так как она вызывала ошибки, лучше просто пропустить)
-            pass
-        else:
-            clean_wf[nid] = node
-            
+        clean_wf[nid] = node
     return clean_wf
 
 def find_node_id(workflow, class_type_list):
@@ -133,7 +108,6 @@ def upload_image(file_bytes, file_name):
     except: return None
 
 def queue_prompt(wf):
-    # ПРИМЕНЯЕМ ЛЕЧЕНИЕ
     clean_wf = repair_workflow(wf)
     try:
         data = json.dumps({"prompt": clean_wf, "client_id": CLIENT_ID}).encode('utf-8')
@@ -145,6 +119,12 @@ def get_history(pid):
     try:
         with urllib.request.urlopen(f"http://{COMFY_SERVER}/history/{pid}") as r: return json.loads(r.read())
     except: return {}
+
+def get_view(filename, subfolder, folder_type):
+    data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
+    url_values = urllib.parse.urlencode(data)
+    with urllib.request.urlopen(f"http://{COMFY_SERVER}/view?{url_values}") as response:
+        return response.read()
 
 # --- KEYBOARDS ---
 def get_main_kb(uid):
@@ -183,7 +163,6 @@ def get_batch_kb():
         [InlineKeyboardButton("1", callback_data="batch_1"), InlineKeyboardButton("2", callback_data="batch_2"), InlineKeyboardButton("4", callback_data="batch_4")],
         [InlineKeyboardButton("⌨️ Custom", callback_data="batch_custom")]
     ])
-
 # ==========================================
 # 🎮 HANDLERS
 # ==========================================
@@ -191,7 +170,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v6.8**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.2 ResFix**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -227,8 +206,23 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "116:120" in wf and data["clip"]: wf["116:120"]["inputs"]["clip_name"] = data["clip"]
         if "116:115" in wf and data["vae"]: wf["116:115"]["inputs"]["vae_name"] = data["vae"]
 
-        # 2. PARAMS
-        wf["101"]["inputs"]["aspect_ratio"] = data["res"]
+        # 2. PARAMS (С ПЕРЕВОДЧИКОМ РАЗРЕШЕНИЙ)
+        
+        # Словарь замены старых значений на новые
+        RES_MAP = {
+            "1024x1024 (Square)": "1:1 (Square)",
+            "1600x900 (Landscape)": "16:9 (Landscape)",
+            "900x1600 (Portrait)": "9:16 (Portrait)",
+            "1216x832 (Landscape)": "3:2 (Landscape)",
+            "832x1216 (Portrait)": "2:3 (Portrait)",
+            "1344x768 (Landscape)": "16:9 (Landscape)", # На всякий случай
+            "768x1344 (Portrait)": "9:16 (Portrait)"
+        }
+        
+        raw_res = data["res"]
+        # Если пришло старое значение - меняем на новое, иначе оставляем как есть
+        wf["101"]["inputs"]["aspect_ratio"] = RES_MAP.get(raw_res, raw_res)
+
         wf["117"]["inputs"]["seed"] = int(data["seed"]) if int(data["seed"]) != -1 else random.randint(1, 10**15)
         wf["119"]["inputs"]["Xi"] = int(data["steps"]); wf["119"]["inputs"]["Xf"] = int(data["steps"])
         wf["118"]["inputs"]["Xi"] = float(data["cfg"]); wf["118"]["inputs"]["Xf"] = float(data["cfg"])
@@ -406,9 +400,8 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
         for nid in out:
             if 'images' in out[nid]:
                 for img in out[nid]['images']:
-                    url = f"http://{COMFY_SERVER}/view?filename={img['filename']}&subfolder={img['subfolder']}&type={img['type']}"
-                    dat = urllib.request.urlopen(url).read()
-                    m = await context.bot.send_photo(uid, dat, caption=caption, parse_mode="HTML")
+                    idata = get_view(img['filename'], img['subfolder'], img['type'])
+                    m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML")
                     track_message(uid, m.message_id)
                     found = True
         
@@ -426,13 +419,16 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
         track_message(uid, m.message_id)
         return
 
+    # 🔥 ВЫБОР ШАБЛОНА
     prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
+    
     status = await update.message.reply_text(f"🚀 {d['batch']}x {cfg['name']}...")
     track_message(uid, status.message_id)
 
     for i in range(d['batch']):
         with open(cfg['file'], "r") as f: wf = json.load(f)
         
+        # Params
         if cfg['need_photo']:
             img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
             if img_node: wf[img_node]["inputs"]["image"] = d['image']
@@ -440,6 +436,7 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
         sid = find_node_id(wf, ["EasySeed", "Seed", "KSampler"])
         if sid and "seed" in wf[sid]["inputs"]: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
+        # Inject Text
         tid = find_node_id(wf, ["CLIPTextEncode", "PrimitiveString"])
         if tid: 
              k = "string" if "string" in wf[tid]["inputs"] else "text"
@@ -457,5 +454,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v6.8 TARGET FIX Started on {RUNPOD_ID}")
+    print(f"✅ Bot v7.2 ResFix Started on {RUNPOD_ID}")
     app.run_polling()
