@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
-# ⚙️ CONFIG & AUTH
+# ⚙️ CONFIG
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID", "")
@@ -16,6 +16,7 @@ BASE_DIR = "/workspace"
 CLIENT_ID = str(uuid.uuid4())
 WEBAPP_URL = f"https://{RUNPOD_ID}-8099.proxy.runpod.net"
 
+# ПУТИ К ФАЙЛАМ
 WORKFLOWS = {
     "edit": { "file": os.path.join(BASE_DIR, "workflow_api.json"), "name": "🎨 Редакт (Qwen)", "need_photo": True },
     "gen":  { "file": os.path.join(BASE_DIR, "workflow_gen.json"), "name": "✨ Генерация (Legacy)", "need_photo": False },
@@ -30,8 +31,73 @@ user_data = {}
 if not BOT_TOKEN: sys.exit("❌ TOKEN MISSING")
 
 # ==========================================
-# 🛠 UTILS
+# 🛠 СИСТЕМА ЛЕЧЕНИЯ JSON (API REPAIR)
 # ==========================================
+
+def repair_workflow(wf):
+    """
+    Агрессивно чинит JSON перед отправкой:
+    1. Удаляет мусор (группы, заметки).
+    2. Присваивает тип 'Reroute' нодам без типа, но с входами.
+    3. Исправляет Windows-пути на Linux.
+    """
+    clean_wf = {}
+    
+    for nid, node in wf.items():
+        if not isinstance(node, dict): continue
+        
+        # 1. Исправляем пути (\ -> /)
+        if "inputs" in node:
+            for k, v in node["inputs"].items():
+                if isinstance(v, str):
+                    node["inputs"][k] = v.replace("\\", "/")
+        
+        # 2. Проверяем class_type
+        if "class_type" not in node:
+            # Если это нода с входами, но без типа -> это сломанный Reroute
+            if "inputs" in node:
+                print(f"🔧 Fixing Node {nid}: Missing class_type -> Setting 'Reroute'")
+                node["class_type"] = "Reroute"
+                clean_wf[nid] = node
+            else:
+                # Если входов нет и типа нет -> это мусор (Group/Note), пропускаем
+                pass
+        else:
+            # Всё ок, добавляем
+            clean_wf[nid] = node
+            
+    return clean_wf
+
+def find_node_id(workflow, class_type_list):
+    if isinstance(workflow, dict):
+        for node_id, node_data in workflow.items():
+            if isinstance(node_data, dict) and node_data.get("class_type") in class_type_list: 
+                return node_id
+    return None
+
+def get_lora_names(uid):
+    names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
+    data = get_user_data(uid)
+    if data['wf'] not in WORKFLOWS: return names
+    target = WORKFLOWS[data['wf']]['file']
+    if not os.path.exists(target): return names
+    try:
+        with open(target, "r", encoding="utf-8") as f: wf = json.load(f)
+        nid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
+        if nid:
+            inputs = wf[nid]["inputs"]
+            for i in range(1, 5):
+                key = f"lora_{i}"
+                if key in inputs and "lora" in inputs[key]:
+                    raw = inputs[key]["lora"]
+                    clean = raw.replace("\\", "/").split("/")[-1]
+                    clean = clean.replace(".safetensors", "").replace("_", " ")
+                    if len(clean) > 20: clean = clean[:18] + ".."
+                    names[i] = clean
+    except: pass
+    return names
+
+# --- UTILS ---
 def get_user_data(uid):
     if uid not in user_data:
         user_data[uid] = {
@@ -52,53 +118,6 @@ async def check_auth(update):
         return False
     return True
 
-def fix_paths_for_linux(workflow):
-    for nid, node in workflow.items():
-        if isinstance(node, dict) and "inputs" in node:
-            for key, val in node["inputs"].items():
-                if isinstance(val, str) and "\\" in val:
-                    node["inputs"][key] = val.replace("\\", "/")
-    return workflow
-
-def find_node_id(workflow, class_type_list):
-    if isinstance(workflow, dict):
-        for node_id, node_data in workflow.items():
-            if isinstance(node_data, dict) and node_data.get("class_type") in class_type_list: 
-                return node_id
-    return None
-
-def clean_workflow_safe(wf):
-    """Удаляет из JSON всё, что не является нодой (версии, группы, метаданные)"""
-    clean_wf = {}
-    for key, value in wf.items():
-        # Оставляем только те ключи, где значение - словарь и есть 'class_type'
-        if isinstance(value, dict) and "class_type" in value:
-            clean_wf[key] = value
-    return clean_wf
-
-def get_lora_names(uid):
-    names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
-    data = get_user_data(uid)
-    if data['wf'] not in WORKFLOWS: return names
-    target = WORKFLOWS[data['wf']]['file']
-    
-    if not os.path.exists(target): return names
-    try:
-        with open(target, "r", encoding="utf-8") as f: wf = json.load(f)
-        nid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
-        if nid:
-            inputs = wf[nid]["inputs"]
-            for i in range(1, 5):
-                key = f"lora_{i}"
-                if key in inputs and "lora" in inputs[key]:
-                    raw = inputs[key]["lora"]
-                    clean = raw.replace("\\", "/").split("/")[-1]
-                    clean = clean.replace(".safetensors", "").replace("_", " ")
-                    if len(clean) > 20: clean = clean[:18] + ".."
-                    names[i] = clean
-    except: pass
-    return names
-
 # --- API ---
 def upload_image(file_bytes, file_name):
     try:
@@ -108,8 +127,8 @@ def upload_image(file_bytes, file_name):
     except: return None
 
 def queue_prompt(wf):
-    # ВАЖНО: Чистим JSON перед отправкой, чтобы избежать KeyError: 'class_type'
-    clean_wf = clean_workflow_safe(wf)
+    # ПРИМЕНЯЕМ ЛЕЧЕНИЕ ПЕРЕД ОТПРАВКОЙ
+    clean_wf = repair_workflow(wf)
     
     try:
         data = json.dumps({"prompt": clean_wf, "client_id": CLIENT_ID}).encode('utf-8')
@@ -167,7 +186,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v6.3**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v6.5**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -186,7 +205,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: await msg.edit_text("❌ Ошибка")
     except Exception as e: await msg.edit_text(f"Error: {e}")
 
-# --- WEBAPP FLUX ---
+# --- WEBAPP (FLUX) ---
 async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
@@ -228,7 +247,7 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # 5. REFS
         loaders = {1:"76", 2:"104", 3:"105", 4:"182", 5:"183", 6:"184"}
-        for i in range(1,7): # Reset all
+        for i in range(1,7): 
             gid = 211+i
             if f"{gid}:214" in wf: wf[f"{gid}:214"]["inputs"]["value"] = False
         
@@ -248,6 +267,36 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"WebApp Error: {e}")
         traceback.print_exc()
 
+# --- CALLBACKS (V5.3 LOGIC RESTORED) ---
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    uid = q.from_user.id
+    d = get_user_data(uid)
+    await q.answer()
+    
+    # 1. BATCH
+    if q.data.startswith("batch_"):
+        if "custom" in q.data:
+            d['awaiting_custom_batch'] = True
+            await q.message.edit_text("⌨️ **Введите число** (например 50):", parse_mode="Markdown")
+        else:
+            count = int(q.data.split("_")[1])
+            d['batch'] = count
+            # Удаляем старое, шлем новое (как в 5.3)
+            await q.message.delete()
+            m = await context.bot.send_message(uid, f"🔢 Batch установлен: **{count}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+            track_message(uid, m.message_id)
+    
+    # 2. LORA EDIT
+    elif q.data.startswith("edit_lora_"):
+        slot = int(q.data.split("_")[2])
+        d['awaiting_lora'] = slot
+        names = get_lora_names(uid)
+        await q.message.edit_text(f"✍️ **{names[slot]}**\nВведите вес (0.1 - 1.0) или 0:", parse_mode="Markdown")
+
+    # 3. CLOSE
+    elif q.data in ["close_links", "close_lora"]: await q.message.delete()
+
 # --- TEXT HANDLER ---
 async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
@@ -256,12 +305,15 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = get_user_data(uid)
     track_message(uid, update.message.message_id)
 
-    # BATCH
+    # BATCH INPUT
     if d.get('awaiting_custom_batch'):
         if text.isdigit():
             d['batch'] = int(text)
             d['awaiting_custom_batch'] = False
-            m = await update.message.reply_text(f"🔢 Batch: {text}", reply_markup=get_main_kb(uid))
+            m = await update.message.reply_text(f"🔢 Batch: **{d['batch']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+            track_message(uid, m.message_id)
+        else:
+            m = await update.message.reply_text("⚠️ Введите число")
             track_message(uid, m.message_id)
         return
 
@@ -269,19 +321,21 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if d.get('awaiting_dataset_name'):
         d['dataset_name'] = text
         d['awaiting_dataset_name'] = False
-        m = await update.message.reply_text(f"🏷 Set: {text}", reply_markup=get_main_kb(uid))
+        m = await update.message.reply_text(f"🏷 Имя сета: **{text}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
         track_message(uid, m.message_id)
         return
 
-    # LORA WEIGHT INPUT
+    # LORA WEIGHT
     if d['awaiting_lora']:
         try:
             val = float(text.replace(",", "."))
             d['loras'][d['awaiting_lora']] = val
             d['awaiting_lora'] = None
-            m = await update.message.reply_text(f"Set: {val}", reply_markup=get_lora_kb(uid))
+            
+            names = get_lora_names(uid)
+            m = await update.message.reply_text(f"✅ {names[d['awaiting_lora']]} -> {val}", reply_markup=get_main_kb(uid))
             track_message(uid, m.message_id)
-        except: await update.message.reply_text("Number required")
+        except: await update.message.reply_text("Введите число")
         return
 
     # COMMANDS
@@ -290,11 +344,11 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try: await context.bot.delete_message(uid, mid)
             except: pass
         d['msg_ids'] = []
-        m = await update.message.reply_text("🧹", reply_markup=get_main_kb(uid))
+        m = await update.message.reply_text("🧹 Чисто", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
     elif text == "🎛 LORA MIXER":
-        m = await update.message.reply_text("🎛 Mixer:", reply_markup=get_lora_kb(uid))
+        m = await update.message.reply_text("🎛 Настройка Лор:", reply_markup=get_lora_kb(uid))
         track_message(uid, m.message_id)
 
     elif text == "🌐 Ссылки":
@@ -302,23 +356,23 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         track_message(uid, m.message_id)
 
     elif text.startswith("🔢"):
-        m = await update.message.reply_text("Count:", reply_markup=get_batch_kb())
+        m = await update.message.reply_text("Количество:", reply_markup=get_batch_kb())
         track_message(uid, m.message_id)
 
     elif text.startswith("🏷"):
         d['awaiting_dataset_name'] = True
-        m = await update.message.reply_text("Enter name:")
+        m = await update.message.reply_text("📝 Введите префикс файла:")
         track_message(uid, m.message_id)
 
     elif text.startswith("🔄"):
         keys = list(WORKFLOWS.keys())
         d['wf'] = keys[(keys.index(d['wf']) + 1) % len(keys)]
-        m = await update.message.reply_text(f"WF: {WORKFLOWS[d['wf']]['name']}", reply_markup=get_main_kb(uid))
+        m = await update.message.reply_text(f"🔄 Режим: **{WORKFLOWS[d['wf']]['name']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
         track_message(uid, m.message_id)
 
     elif "Режим:" in text:
         d['mode'] = 'nsfw' if d['mode'] == 'normal' else 'normal'
-        m = await update.message.reply_text(f"Mode: {d['mode'].upper()}", reply_markup=get_main_kb(uid))
+        m = await update.message.reply_text(f"Режим: {d['mode'].upper()}", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
     elif text == "🚀 ГЕНЕРАЦИЯ":
@@ -327,34 +381,18 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             track_message(uid, m.message_id)
         else:
             await run_legacy_gen(update, context, uid)
-
-# --- CALLBACKS (This fixes v5.3 buttons!) ---
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    uid = q.from_user.id
-    d = get_user_data(uid)
-    await q.answer()
-    
-    if q.data.startswith("batch_"):
-        if "custom" in q.data:
-            d['awaiting_custom_batch'] = True
-            await q.message.edit_text("Enter number:")
-        else:
-            d['batch'] = int(q.data.split("_")[1])
-            await q.message.edit_text(f"Batch: {d['batch']}")
-            await context.bot.send_message(uid, "Updated", reply_markup=get_main_kb(uid))
-    
-    elif q.data.startswith("edit_lora_"):
-        slot = int(q.data.split("_")[2])
-        d['awaiting_lora'] = slot
-        await q.message.edit_text(f"Enter weight for LoRA {slot}:")
-
-    elif q.data in ["close_links", "close_lora"]: await q.message.delete()
+            
+    else:
+        # Manual Prompt
+        if d['wf'] != 'flux':
+            await run_legacy_gen(update, context, uid, manual_prompt=text)
 
 # --- EXECUTION ---
 async def run_workflow(context, uid, wf, status_msg, batch_idx):
     try:
+        # ЛЕЧИМ JSON ТУТ
         res = queue_prompt(wf)
+        
         if 'error' in res:
             await status_msg.edit_text(f"❌ Error: {res['error']}")
             return
@@ -367,6 +405,7 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
 
         out = h[pid]['outputs']
         found = False
+        
         for nid in out:
             if 'images' in out[nid]:
                 for img in out[nid]['images']:
@@ -377,38 +416,40 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
         
         if found: await status_msg.delete()
         else: await status_msg.edit_text("⚠️ No output")
-    except Exception as e: await context.bot.send_message(uid, f"Runtime Error: {e}")
+    except Exception as e: 
+        await context.bot.send_message(uid, f"Runtime Error: {e}")
 
-async def run_legacy_gen(update, context, uid):
+async def run_legacy_gen(update, context, uid, manual_prompt=None):
     d = get_user_data(uid)
     cfg = WORKFLOWS[d['wf']]
     
     if cfg['need_photo'] and not d['image']:
-        await update.message.reply_text("⚠️ Photo required!")
+        m = await update.message.reply_text("⚠️ Нужно фото!")
+        track_message(uid, m.message_id)
         return
-        
-    status = await update.message.reply_text(f"🚀 Running {d['batch']}x {cfg['name']}...")
+
+    prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
+    status = await update.message.reply_text(f"🚀 Запуск {d['batch']} шт...\n📂 Set: {d['dataset_name']}")
     track_message(uid, status.message_id)
 
     for i in range(d['batch']):
         with open(cfg['file'], "r") as f: wf = json.load(f)
-        wf = fix_paths_for_linux(wf)
-        wf = clean_workflow_safe(wf) # <--- ЧИСТИМ И ТУТ ТОЖЕ
         
-        # Inject Photo
+        # Inject Params
         if cfg['need_photo']:
             img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
             if img_node: wf[img_node]["inputs"]["image"] = d['image']
         
-        # Inject Seed
-        seed_node = find_node_id(wf, ["EasySeed", "Seed", "KSampler"])
-        if seed_node and "seed" in wf[seed_node]["inputs"]: wf[seed_node]["inputs"]["seed"] = random.randint(1, 10**15)
+        sid = find_node_id(wf, ["EasySeed", "Seed", "KSampler"])
+        if sid and "seed" in wf[sid]["inputs"]: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
-        # Inject Text (Simple)
-        txt_node = find_node_id(wf, ["CLIPTextEncode", "PrimitiveString"])
-        if txt_node: 
-             k = "string" if "string" in wf[txt_node]["inputs"] else "text"
-             wf[txt_node]["inputs"][k] = PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW
+        tid = find_node_id(wf, ["CLIPTextEncode", "PrimitiveString"])
+        if tid: 
+             k = "string" if "string" in wf[tid]["inputs"] else "text"
+             wf[tid]["inputs"][k] = prompt_txt
+
+        if "211" in wf and "inputs" in wf["211"]:
+            wf["211"]["inputs"]["value"] = d['dataset_name']
 
         asyncio.create_task(run_workflow(context, uid, wf, status, i+1))
 
@@ -419,5 +460,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v6.3 Final Started on {RUNPOD_ID}")
+    print(f"✅ Bot v6.5 Final Started on {RUNPOD_ID}")
     app.run_polling()
