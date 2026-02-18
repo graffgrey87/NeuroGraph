@@ -1,5 +1,5 @@
 import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
@@ -50,7 +50,8 @@ def get_user_data(uid):
 def track_message(uid, mid):
     d = get_user_data(uid)
     if mid not in d['msg_ids']: d['msg_ids'].append(mid)
-    if len(d['msg_ids']) > 300: d['msg_ids'].pop(0) # Увеличил память
+    # Увеличили память до 500 сообщений для надежной очистки
+    if len(d['msg_ids']) > 500: d['msg_ids'].pop(0)
 
 def repair_workflow(wf):
     clean_wf = {}
@@ -166,11 +167,13 @@ def get_main_kb(uid):
     d = get_user_data(uid)
     ico = "😇" if d['mode'] == 'normal' else "😈"
     
+    # 💡 ФОРМИРОВАНИЕ ССЫЛКИ С ПАМЯТЬЮ
     final_url = WEBAPP_URL
     if d['flux_store']:
         try:
-            # 💡 Сжимаем JSON (удаляем пробелы) и удаляем padding '=' из base64
+            # Сжимаем JSON (удаляем пробелы)
             json_str = json.dumps(d['flux_store'], separators=(',', ':'))
+            # Кодируем в URL-Safe Base64
             b64_str = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('utf-8').rstrip("=")
             final_url = f"{WEBAPP_URL}?init={b64_str}"
         except: pass
@@ -218,14 +221,14 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.8 Stable**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.9 Ultimate**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
     track_message(uid, update.message.message_id)
-    msg = await update.message.reply_text("📥 Сохраняю...", reply_markup=get_main_kb(uid))
+    msg = await update.message.reply_text("📥 Сохраняю...", reply_markup=get_main_kb(uid)) # КРЕПИМ МЕНЮ
     track_message(uid, msg.message_id)
     try:
         f = await update.message.photo[-1].get_file()
@@ -247,8 +250,8 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         d = get_user_data(uid)
         d['flux_store'] = data # 💾 Save
         
-        # 🔄 ОБНОВЛЯЕМ МЕНЮ (чтобы ссылка обновилась)
-        m_upd = await update.message.reply_text("💾 Настройки Flux сохранены!", reply_markup=get_main_kb(uid))
+        # 💡 ВАЖНО: Присылаем сообщение с ОБНОВЛЕННОЙ КНОПКОЙ
+        m_upd = await update.message.reply_text("💾 Настройки обновлены! Кнопка 'Пульт' обновлена.", reply_markup=get_main_kb(uid))
         track_message(uid, m_upd.message_id)
 
         # Preview Refs
@@ -264,13 +267,12 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Run
         with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f: wf = json.load(f)
         wf = apply_flux_settings(wf, data)
-        # 💡 Прикрепляем меню к сообщению о запуске
         msg = await update.message.reply_text(f"🎬 Flux Pro: {data['res']}", reply_markup=get_main_kb(uid))
         track_message(uid, msg.message_id)
         asyncio.create_task(run_workflow(context, uid, wf, msg, 1))
         
     except Exception as e:
-        m = await update.message.reply_text(f"WebApp Error: {e}")
+        m = await update.message.reply_text(f"WebApp Error: {e}", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
         traceback.print_exc()
 
@@ -287,7 +289,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             d['batch'] = int(text)
             d['awaiting_custom_batch'] = False
             m = await update.message.reply_text(f"🔢 Batch: {d['batch']}", reply_markup=get_main_kb(uid))
-        else: m = await update.message.reply_text("Введите число")
+        else: m = await update.message.reply_text("Введите число", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
         return
     
@@ -304,20 +306,18 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             d['loras'][d['awaiting_lora']] = val
             d['awaiting_lora'] = None
             m = await update.message.reply_text("🎛 Mixer:", reply_markup=get_lora_kb(uid))
-        except: m = await update.message.reply_text("Число!")
+        except: m = await update.message.reply_text("Число!", reply_markup=get_lora_kb(uid))
         track_message(uid, m.message_id)
         return
 
     # COMMANDS
     if text == "🗑 ОЧИСТИТЬ":
-        # 🧼 БЕССМЕРТНАЯ ОЧИСТКА
-        deleted_count = 0
+        # 🧼 БУЛЬДОЗЕР: Чистим все подряд, игнорируем ошибки
         for mid in reversed(d['msg_ids']):
             try: 
                 await context.bot.delete_message(uid, mid)
-                deleted_count += 1
             except: 
-                continue # Если не смогли удалить одно, идем к следующему
+                pass # Просто идем дальше
         d['msg_ids'] = []
         m = await update.message.reply_text("🧹", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
@@ -332,7 +332,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 wf = apply_flux_settings(wf, data)
                 asyncio.create_task(run_workflow(context, uid, wf, m, 1))
             else:
-                m = await update.message.reply_text("⚠️ Настрой через Пульт!", reply_markup=get_main_kb(uid))
+                m = await update.message.reply_text("⚠️ Сначала настрой через Пульт!", reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
         else:
             await run_legacy_gen(update, context, uid)
@@ -400,7 +400,7 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
             if 'images' in out[nid]:
                 for img in out[nid]['images']:
                     idata = get_view(img['filename'], img['subfolder'], img['type'])
-                    # 💡 Присылаем результат С МЕНЮ
+                    # 💡 ВОЗВРАЩАЕМ МЕНЮ С ФОТОГРАФИЕЙ
                     m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
                     track_message(uid, m.message_id)
                     found = True
@@ -466,7 +466,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             d['batch'] = int(q.data.split("_")[1])
             await q.message.delete()
-            # 💡 Возвращаем меню при выборе
             m = await context.bot.send_message(uid, f"🔢 Batch: **{d['batch']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
             track_message(uid, m.message_id)
     
@@ -480,7 +479,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif q.data in ["close_links", "close_lora"]: 
         await q.message.delete()
-        # 💡 ВОЗВРАЩАЕМ МЕНЮ ПОСЛЕ ЗАКРЫТИЯ
+        # 💡 ВОЗВРАЩАЕМ МЕНЮ, ЕСЛИ ПРОПАЛО
         m = await context.bot.send_message(uid, "✅ Меню активно", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
@@ -491,5 +490,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v7.8 Stable Started on {RUNPOD_ID}")
+    print(f"✅ Bot v7.9 Ultimate Started on {RUNPOD_ID}")
     app.run_polling()
