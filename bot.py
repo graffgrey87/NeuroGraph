@@ -1,5 +1,5 @@
 import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # ==========================================
@@ -26,7 +26,6 @@ WORKFLOWS = {
 PROMPT_NORMAL = "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 PROMPT_NSFW = "На фото крупным планом показана высокая девушка с изображения 1, которая __действие_nsfw__ __место__. На ней __наряд_nsfw__. Она __доп_действие_nsfw__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 
-# ПУТИ К ЛОРАМ (Сканер)
 LORA_DIR_ROOT = os.path.join(BASE_DIR, "ComfyUI/models/loras")
 LORA_DIR_QWEN = os.path.join(LORA_DIR_ROOT, "qwen")
 
@@ -51,7 +50,7 @@ def get_user_data(uid):
 def track_message(uid, mid):
     d = get_user_data(uid)
     if mid not in d['msg_ids']: d['msg_ids'].append(mid)
-    if len(d['msg_ids']) > 200: d['msg_ids'].pop(0)
+    if len(d['msg_ids']) > 300: d['msg_ids'].pop(0) # Увеличил память
 
 def repair_workflow(wf):
     clean_wf = {}
@@ -90,7 +89,7 @@ def apply_flux_settings(wf, data):
     wf["161"]["inputs"]["value"] = data["pos"]
     wf["162"]["inputs"]["value"] = data["neg"]
     
-    # 3. CONTROLS & LORAS & REFS
+    # 3. CONTROLS
     wf["146"]["inputs"]["value"] = int(data["rot"]); wf["144"]["inputs"]["value"] = int(data["ang"]) 
     wf["151"]["inputs"]["value"] = int(data["dist"])
     wf["228"]["inputs"]["Xi"] = float(data["ctx"]); wf["228"]["inputs"]["Xf"] = float(data["ctx"])
@@ -122,12 +121,9 @@ async def check_auth(update):
         return False
     return True
 
-# --- LORA SCANNER ---
 def get_available_loras():
-    # Проверяем папку qwen, если нет - берем корень
     target_dir = LORA_DIR_QWEN if os.path.exists(LORA_DIR_QWEN) else LORA_DIR_ROOT
     if not os.path.exists(target_dir): return []
-    # Ищем файлы
     files = [f for f in os.listdir(target_dir) if f.endswith(".safetensors")]
     return sorted(files)
 
@@ -165,18 +161,17 @@ def get_view(filename, subfolder, folder_type):
     with urllib.request.urlopen(f"http://{COMFY_SERVER}/view?{url_values}") as response:
         return response.read()
 
-# --- KEYBOARDS (С ИСПРАВЛЕННОЙ ССЫЛКОЙ) ---
+# --- KEYBOARDS ---
 def get_main_kb(uid):
     d = get_user_data(uid)
     ico = "😇" if d['mode'] == 'normal' else "😈"
     
-    # 💾 Генерируем "Безопасную" ссылку для сохранения настроек
     final_url = WEBAPP_URL
     if d['flux_store']:
         try:
-            json_str = json.dumps(d['flux_store'])
-            # Используем URL-Safe Base64, чтобы ссылка не ломалась
-            b64_str = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('utf-8')
+            # 💡 Сжимаем JSON (удаляем пробелы) и удаляем padding '=' из base64
+            json_str = json.dumps(d['flux_store'], separators=(',', ':'))
+            b64_str = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('utf-8').rstrip("=")
             final_url = f"{WEBAPP_URL}?init={b64_str}"
         except: pass
 
@@ -193,18 +188,13 @@ def get_lora_kb(uid):
     d = get_user_data(uid)
     files = get_available_loras()
     kb = []
-    
-    # Показываем первые 4 лоры из найденных
     for i in range(1, 5):
         idx = i - 1
         name = files[idx] if idx < len(files) else f"Slot {i} (Empty)"
-        # Режем длинные имена
         short_name = name.replace(".safetensors", "")[:18]
-        
         val = d['loras'].get(i, 0.0)
         status = f"✅ {val}" if val > 0 else "❌ OFF"
         kb.append([InlineKeyboardButton(f"{i}. {short_name} | {status}", callback_data=f"edit_lora_{i}")])
-    
     kb.append([InlineKeyboardButton("🔙 Закрыть", callback_data="close_lora")])
     return InlineKeyboardMarkup(kb)
 
@@ -228,14 +218,14 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.7 Fix**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.8 Stable**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
     track_message(uid, update.message.message_id)
-    msg = await update.message.reply_text("📥 Сохраняю...")
+    msg = await update.message.reply_text("📥 Сохраняю...", reply_markup=get_main_kb(uid))
     track_message(uid, msg.message_id)
     try:
         f = await update.message.photo[-1].get_file()
@@ -255,9 +245,9 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         data = json.loads(update.effective_message.web_app_data.data)
         d = get_user_data(uid)
-        d['flux_store'] = data # 💾 Save settings
+        d['flux_store'] = data # 💾 Save
         
-        # 🔄 Обновляем кнопку "Пульт" (вшиваем туда настройки)
+        # 🔄 ОБНОВЛЯЕМ МЕНЮ (чтобы ссылка обновилась)
         m_upd = await update.message.reply_text("💾 Настройки Flux сохранены!", reply_markup=get_main_kb(uid))
         track_message(uid, m_upd.message_id)
 
@@ -274,7 +264,8 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Run
         with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f: wf = json.load(f)
         wf = apply_flux_settings(wf, data)
-        msg = await update.message.reply_text(f"🎬 Flux Pro: {data['res']}")
+        # 💡 Прикрепляем меню к сообщению о запуске
+        msg = await update.message.reply_text(f"🎬 Flux Pro: {data['res']}", reply_markup=get_main_kb(uid))
         track_message(uid, msg.message_id)
         asyncio.create_task(run_workflow(context, uid, wf, msg, 1))
         
@@ -319,9 +310,14 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # COMMANDS
     if text == "🗑 ОЧИСТИТЬ":
+        # 🧼 БЕССМЕРТНАЯ ОЧИСТКА
+        deleted_count = 0
         for mid in reversed(d['msg_ids']):
-            try: await context.bot.delete_message(uid, mid)
-            except: pass
+            try: 
+                await context.bot.delete_message(uid, mid)
+                deleted_count += 1
+            except: 
+                continue # Если не смогли удалить одно, идем к следующему
         d['msg_ids'] = []
         m = await update.message.reply_text("🧹", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
@@ -330,19 +326,19 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if d['wf'] == 'flux':
             if d['flux_store']:
                 data = d['flux_store']
-                m = await update.message.reply_text(f"🚀 Повтор Flux ({data['res']})...")
+                m = await update.message.reply_text(f"🚀 Повтор Flux ({data['res']})...", reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
                 with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f: wf = json.load(f)
                 wf = apply_flux_settings(wf, data)
                 asyncio.create_task(run_workflow(context, uid, wf, m, 1))
             else:
-                m = await update.message.reply_text("⚠️ Сначала настрой через Пульт!")
+                m = await update.message.reply_text("⚠️ Настрой через Пульт!", reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
         else:
             await run_legacy_gen(update, context, uid)
 
     elif text == "🎛 LORA MIXER":
-        m = await update.message.reply_text("🎛 Выбери Лору (из папки qwen):", reply_markup=get_lora_kb(uid))
+        m = await update.message.reply_text("🎛 Выбери Лору:", reply_markup=get_lora_kb(uid))
         track_message(uid, m.message_id)
 
     elif text == "🌐 Ссылки":
@@ -404,7 +400,8 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
             if 'images' in out[nid]:
                 for img in out[nid]['images']:
                     idata = get_view(img['filename'], img['subfolder'], img['type'])
-                    m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML")
+                    # 💡 Присылаем результат С МЕНЮ
+                    m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
                     track_message(uid, m.message_id)
                     found = True
         
@@ -418,17 +415,15 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
     cfg = WORKFLOWS[d['wf']]
     
     if cfg['need_photo'] and not d['image']:
-        m = await update.message.reply_text("⚠️ Нужно фото!")
+        m = await update.message.reply_text("⚠️ Нужно фото!", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
         return
 
     prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
-    status = await update.message.reply_text(f"🚀 {d['batch']}x {cfg['name']}...")
+    status = await update.message.reply_text(f"🚀 {d['batch']}x {cfg['name']}...", reply_markup=get_main_kb(uid))
     track_message(uid, status.message_id)
 
-    # ПОДГОТОВКА ЛОР ДЛЯ QWEN
     files = get_available_loras()
-    
     for i in range(d['batch']):
         with open(cfg['file'], "r") as f: wf = json.load(f)
         
@@ -438,13 +433,8 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
                  idx = slot - 1
                  if idx < len(files):
                      if d['loras'].get(slot, 0.0) > 0:
-                         wf[nid]["inputs"][f"lora_{slot}"] = {
-                             "on": True, 
-                             "lora": files[idx], 
-                             "strength": d['loras'][slot]
-                         }
-                     else:
-                         wf[nid]["inputs"][f"lora_{slot}"] = {"on": False}
+                         wf[nid]["inputs"][f"lora_{slot}"] = {"on": True, "lora": files[idx], "strength": d['loras'][slot]}
+                     else: wf[nid]["inputs"][f"lora_{slot}"] = {"on": False}
 
         if cfg['need_photo']:
             img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
@@ -476,20 +466,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             d['batch'] = int(q.data.split("_")[1])
             await q.message.delete()
+            # 💡 Возвращаем меню при выборе
             m = await context.bot.send_message(uid, f"🔢 Batch: **{d['batch']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
             track_message(uid, m.message_id)
     
     elif q.data.startswith("edit_lora_"):
         slot = int(q.data.split("_")[2])
         d['awaiting_lora'] = slot
-        
         files = get_available_loras()
         idx = slot - 1
         lname = files[idx] if idx < len(files) else f"Slot {slot}"
-        
         await q.message.edit_text(f"✍️ **{lname}**\nВведите вес (0.1 - 1.0):", parse_mode="Markdown")
 
-    elif q.data in ["close_links", "close_lora"]: await q.message.delete()
+    elif q.data in ["close_links", "close_lora"]: 
+        await q.message.delete()
+        # 💡 ВОЗВРАЩАЕМ МЕНЮ ПОСЛЕ ЗАКРЫТИЯ
+        m = await context.bot.send_message(uid, "✅ Меню активно", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -498,5 +491,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v7.7 Final Started on {RUNPOD_ID}")
+    print(f"✅ Bot v7.8 Stable Started on {RUNPOD_ID}")
     app.run_polling()
