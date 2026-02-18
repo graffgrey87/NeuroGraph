@@ -26,7 +26,7 @@ WORKFLOWS = {
 PROMPT_NORMAL = "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 PROMPT_NSFW = "На фото крупным планом показана высокая девушка с изображения 1, которая __действие_nsfw__ __место__. На ней __наряд_nsfw__. Она __доп_действие_nsfw__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 
-# ПУТИ К ЛОРАМ
+# ПУТИ К ЛОРАМ (Сканер)
 LORA_DIR_ROOT = os.path.join(BASE_DIR, "ComfyUI/models/loras")
 LORA_DIR_QWEN = os.path.join(LORA_DIR_ROOT, "qwen")
 
@@ -122,12 +122,12 @@ async def check_auth(update):
         return False
     return True
 
-# --- LORA SCANNER (NEW) ---
+# --- LORA SCANNER ---
 def get_available_loras():
-    """Сканирует папку qwen, если она есть, иначе общую"""
+    # Проверяем папку qwen, если нет - берем корень
     target_dir = LORA_DIR_QWEN if os.path.exists(LORA_DIR_QWEN) else LORA_DIR_ROOT
     if not os.path.exists(target_dir): return []
-    
+    # Ищем файлы
     files = [f for f in os.listdir(target_dir) if f.endswith(".safetensors")]
     return sorted(files)
 
@@ -165,18 +165,18 @@ def get_view(filename, subfolder, folder_type):
     with urllib.request.urlopen(f"http://{COMFY_SERVER}/view?{url_values}") as response:
         return response.read()
 
-# --- KEYBOARDS ---
+# --- KEYBOARDS (С ИСПРАВЛЕННОЙ ССЫЛКОЙ) ---
 def get_main_kb(uid):
     d = get_user_data(uid)
     ico = "😇" if d['mode'] == 'normal' else "😈"
     
-    # 🔗 Генерируем ссылку с настройками для сохранения в WebApp
+    # 💾 Генерируем "Безопасную" ссылку для сохранения настроек
     final_url = WEBAPP_URL
     if d['flux_store']:
-        # Кодируем JSON в строку для URL
         try:
             json_str = json.dumps(d['flux_store'])
-            b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+            # Используем URL-Safe Base64, чтобы ссылка не ломалась
+            b64_str = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('utf-8')
             final_url = f"{WEBAPP_URL}?init={b64_str}"
         except: pass
 
@@ -194,12 +194,12 @@ def get_lora_kb(uid):
     files = get_available_loras()
     kb = []
     
-    # Показываем первые 4 лоры из папки
+    # Показываем первые 4 лоры из найденных
     for i in range(1, 5):
         idx = i - 1
         name = files[idx] if idx < len(files) else f"Slot {i} (Empty)"
-        # Укорачиваем имя для кнопки
-        short_name = name.replace(".safetensors", "")[:15]
+        # Режем длинные имена
+        short_name = name.replace(".safetensors", "")[:18]
         
         val = d['loras'].get(i, 0.0)
         status = f"✅ {val}" if val > 0 else "❌ OFF"
@@ -221,14 +221,14 @@ def get_batch_kb():
         [InlineKeyboardButton("1", callback_data="batch_1"), InlineKeyboardButton("2", callback_data="batch_2"), InlineKeyboardButton("4", callback_data="batch_4")],
         [InlineKeyboardButton("⌨️ Custom", callback_data="batch_custom")]
     ])
-    # ==========================================
+# ==========================================
 # 🎮 HANDLERS
 # ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.6 (Qwen+Mem)**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.7 Fix**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -257,8 +257,8 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         d = get_user_data(uid)
         d['flux_store'] = data # 💾 Save settings
         
-        # 🔄 Обновляем клавиатуру, чтобы вшить настройки в кнопку
-        m_upd = await update.message.reply_text("💾 Настройки сохранены!", reply_markup=get_main_kb(uid))
+        # 🔄 Обновляем кнопку "Пульт" (вшиваем туда настройки)
+        m_upd = await update.message.reply_text("💾 Настройки Flux сохранены!", reply_markup=get_main_kb(uid))
         track_message(uid, m_upd.message_id)
 
         # Preview Refs
@@ -336,7 +336,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 wf = apply_flux_settings(wf, data)
                 asyncio.create_task(run_workflow(context, uid, wf, m, 1))
             else:
-                m = await update.message.reply_text("⚠️ Настрой через Пульт!")
+                m = await update.message.reply_text("⚠️ Сначала настрой через Пульт!")
                 track_message(uid, m.message_id)
         else:
             await run_legacy_gen(update, context, uid)
@@ -426,30 +426,26 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
     status = await update.message.reply_text(f"🚀 {d['batch']}x {cfg['name']}...")
     track_message(uid, status.message_id)
 
-    # ПОДГОТОВКА ЛОР ДЛЯ QWEN (из папки)
+    # ПОДГОТОВКА ЛОР ДЛЯ QWEN
     files = get_available_loras()
     
     for i in range(d['batch']):
         with open(cfg['file'], "r") as f: wf = json.load(f)
         
-        # Inject Loras if node exists
         nid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
         if nid:
              for slot in range(1, 5):
                  idx = slot - 1
                  if idx < len(files):
-                     # Если есть файл и включен вес
                      if d['loras'].get(slot, 0.0) > 0:
                          wf[nid]["inputs"][f"lora_{slot}"] = {
                              "on": True, 
-                             "lora": files[idx], # Имя файла из папки qwen
+                             "lora": files[idx], 
                              "strength": d['loras'][slot]
                          }
                      else:
-                         # Если вес 0, выключаем
                          wf[nid]["inputs"][f"lora_{slot}"] = {"on": False}
 
-        # Params
         if cfg['need_photo']:
             img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
             if img_node: wf[img_node]["inputs"]["image"] = d['image']
@@ -502,5 +498,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v7.6 Qwen+Mem Started on {RUNPOD_ID}")
+    print(f"✅ Bot v7.7 Final Started on {RUNPOD_ID}")
     app.run_polling()
