@@ -19,7 +19,6 @@ WEBAPP_URL = f"https://{RUNPOD_ID}-8099.proxy.runpod.net"
 # ПУТИ
 WORKFLOWS = {
     "edit": { "file": os.path.join(BASE_DIR, "workflow_api.json"), "name": "🎨 Редакт (Qwen)", "need_photo": True },
-    "gen":  { "file": os.path.join(BASE_DIR, "workflow_gen.json"), "name": "✨ Генерация (Legacy)", "need_photo": False },
     "flux": { "file": os.path.join(BASE_DIR, "TI2I_Flux2_Klein.json"), "name": "🚀 Flux Pro", "need_photo": False }
 }
 
@@ -221,7 +220,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.9 Ultimate**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v8.1 Ultimate**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -440,7 +439,7 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
             img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
             if img_node: wf[img_node]["inputs"]["image"] = d['image']
         
-        sid = find_node_id(wf, ["EasySeed", "Seed", "KSampler"])
+        sid = find_node_id(wf, ["EasySeed"])
         if sid and "seed" in wf[sid]["inputs"]: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
         tid = find_node_id(wf, ["CLIPTextEncode", "PrimitiveString"])
@@ -490,5 +489,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v7.9 Ultimate Started on {RUNPOD_ID}")
+    print(f"✅ Bot v8.1 Ultimate Started on {RUNPOD_ID}")
     app.run_polling()
