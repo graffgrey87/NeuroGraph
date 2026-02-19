@@ -1,9 +1,12 @@
 import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 # ==========================================
-# ⚙️ CONFIG
+# ⚙️ CONFIG & API SERVER
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID", "")
@@ -15,6 +18,20 @@ COMFY_SERVER = f"127.0.0.1:{COMFY_PORT}"
 BASE_DIR = "/workspace"
 CLIENT_ID = str(uuid.uuid4())
 WEBAPP_URL = f"https://{RUNPOD_ID}-8099.proxy.runpod.net"
+
+# Локальная БД настроек WebApp (Порт 8099)
+USER_SETTINGS = {}
+api_app = FastAPI()
+api_app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+@api_app.get("/api/settings/{uid}")
+async def get_settings(uid: int):
+    return USER_SETTINGS.get(uid, {"aspect": "1024x1024 (Square)", "camera_rotation": 0, "camera_angle": "Straight", "camera_distance": "Full body"})
+
+@api_app.post("/api/settings/{uid}")
+async def save_settings(uid: int, request: Request):
+    USER_SETTINGS[uid] = await request.json()
+    return {"status": "success"}
 
 # ПУТИ
 WORKFLOWS = {
