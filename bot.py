@@ -32,6 +32,12 @@ async def get_settings(uid: int):
 async def save_settings(uid: int, request: Request):
     USER_SETTINGS[uid] = await request.json()
     return {"status": "success"}
+from fastapi.responses import FileResponse
+
+@api_app.get("/")
+async def serve_index():
+    return FileResponse("/workspace/index.html")
+
 
 # ПУТИ
 WORKFLOWS = {
