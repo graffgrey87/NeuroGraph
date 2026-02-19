@@ -183,16 +183,9 @@ def get_main_kb(uid):
     d = get_user_data(uid)
     ico = "😇" if d['mode'] == 'normal' else "😈"
     
-    # 💡 ФОРМИРОВАНИЕ ССЫЛКИ С ПАМЯТЬЮ
-    final_url = WEBAPP_URL
-    if d['flux_store']:
-        try:
-            # Сжимаем JSON (удаляем пробелы)
-            json_str = json.dumps(d['flux_store'], separators=(',', ':'))
-            # Кодируем в URL-Safe Base64
-            b64_str = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('utf-8').rstrip("=")
-            final_url = f"{WEBAPP_URL}?init={b64_str}"
-        except: pass
+        # 💡 НОВАЯ ЛОГИКА ССЫЛКИ (БЕЗ BASE64)
+    final_url = f"{WEBAPP_URL}/?uid={uid}"
+
 
     kb = [
         [KeyboardButton("🎛 ОТКРЫТЬ ПУЛЬТ (Flux)", web_app=WebAppInfo(url=final_url))],
@@ -499,12 +492,24 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         m = await context.bot.send_message(uid, "✅ Меню активно", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
-if __name__ == '__main__':
+async def main():
+    config = uvicorn.Config(api_app, host="0.0.0.0", port=8099, log_level="warning")
+    server = uvicorn.Server(config)
+    
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v8.1 Ultimate Started on {RUNPOD_ID}")
-    app.run_polling()
+    
+    print(f"✅ Bot v8.1 & API (8099) Started on {RUNPOD_ID}")
+    
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    
+    await server.serve()
+
+if __name__ == '__main__':
+    asyncio.run(main())
