@@ -36,7 +36,7 @@ from fastapi.responses import FileResponse
 
 @api_app.get("/")
 async def serve_index():
-    return FileResponse("/workspace/index.html")
+    return FileResponse("/workspace/templates/index.html")
 
 
 # ПУТИ
