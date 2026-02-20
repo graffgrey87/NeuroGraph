@@ -1,12 +1,9 @@
 import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
 
 # ==========================================
-# ⚙️ CONFIG & API SERVER
+# ⚙️ CONFIG
 # ==========================================
 BOT_TOKEN = os.getenv("TG_TOKEN")
 raw_ids = os.getenv("ADMIN_ID", "")
@@ -19,30 +16,10 @@ BASE_DIR = "/workspace"
 CLIENT_ID = str(uuid.uuid4())
 WEBAPP_URL = f"https://{RUNPOD_ID}-8099.proxy.runpod.net"
 
-# Локальная БД настроек WebApp (Порт 8099)
-USER_SETTINGS = {}
-api_app = FastAPI()
-api_app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
-@api_app.get("/api/settings/{uid}")
-async def get_settings(uid: int):
-    return USER_SETTINGS.get(uid, {"aspect": "1024x1024 (Square)", "camera_rotation": 0, "camera_angle": "Straight", "camera_distance": "Full body"})
-
-@api_app.post("/api/settings/{uid}")
-async def save_settings(uid: int, request: Request):
-    USER_SETTINGS[uid] = await request.json()
-    return {"status": "success"}
-
-from fastapi.responses import FileResponse
-
-@api_app.get("/")
-async def serve_index():
-    # Точный путь к файлу в папке templates
-    return FileResponse("/workspace/templates/index.html")
-
 # ПУТИ
 WORKFLOWS = {
     "edit": { "file": os.path.join(BASE_DIR, "workflow_api.json"), "name": "🎨 Редакт (Qwen)", "need_photo": True },
+    "gen":  { "file": os.path.join(BASE_DIR, "workflow_gen.json"), "name": "✨ Генерация (Legacy)", "need_photo": False },
     "flux": { "file": os.path.join(BASE_DIR, "TI2I_Flux2_Klein.json"), "name": "🚀 Flux Pro", "need_photo": False }
 }
 
@@ -190,9 +167,16 @@ def get_main_kb(uid):
     d = get_user_data(uid)
     ico = "😇" if d['mode'] == 'normal' else "😈"
     
-        # 💡 НОВАЯ ЛОГИКА ССЫЛКИ (БЕЗ BASE64)
-    final_url = f"{WEBAPP_URL}/?uid={uid}"
-
+    # 💡 ФОРМИРОВАНИЕ ССЫЛКИ С ПАМЯТЬЮ
+    final_url = WEBAPP_URL
+    if d['flux_store']:
+        try:
+            # Сжимаем JSON (удаляем пробелы)
+            json_str = json.dumps(d['flux_store'], separators=(',', ':'))
+            # Кодируем в URL-Safe Base64
+            b64_str = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('utf-8').rstrip("=")
+            final_url = f"{WEBAPP_URL}?init={b64_str}"
+        except: pass
 
     kb = [
         [KeyboardButton("🎛 ОТКРЫТЬ ПУЛЬТ (Flux)", web_app=WebAppInfo(url=final_url))],
@@ -237,7 +221,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v8.1 Ultimate**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.9 Ultimate**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -456,7 +440,7 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
             img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
             if img_node: wf[img_node]["inputs"]["image"] = d['image']
         
-        sid = find_node_id(wf, ["EasySeed"])
+        sid = find_node_id(wf, ["EasySeed", "Seed", "KSampler"])
         if sid and "seed" in wf[sid]["inputs"]: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
         tid = find_node_id(wf, ["CLIPTextEncode", "PrimitiveString"])
@@ -499,28 +483,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         m = await context.bot.send_message(uid, "✅ Меню активно", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
-async def main():
-    # 💡 ЖЕСТКАЯ ОЧИСТКА ПОРТА: Автоматически убиваем зомби-процессы на порту 8099
-    os.system("fuser -k 8099/tcp >/dev/null 2>&1 || lsof -ti:8099 | xargs kill -9 >/dev/null 2>&1 || true")
-    await asyncio.sleep(1) # Даем системе секунду на освобождение сокета
-
-    config = uvicorn.Config(api_app, host="0.0.0.0", port=8099, log_level="warning")
-    server = uvicorn.Server(config)
-    
+if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    
-    print(f"✅ Bot v8.1 & API (8099) Started on {RUNPOD_ID}")
-    
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    
-    await server.serve()
-
-if __name__ == '__main__':
-    asyncio.run(main())
+    print(f"✅ Bot v8.1 Ultimate Started on {RUNPOD_ID}")
+    app.run_polling()
