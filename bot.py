@@ -60,8 +60,6 @@ def repair_workflow(wf):
         if "inputs" in node:
             for k, v in node["inputs"].items():
                 if isinstance(v, str): node["inputs"][k] = v.replace("\\", "/")
-        if "class_type" not in node and "inputs" in node:
-            node["class_type"] = "Reroute"
         clean_wf[nid] = node
     return clean_wf
 
@@ -268,11 +266,10 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except: pass
 
         # Run
-        with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f: wf = json.load(f)
-        wf = apply_flux_settings(wf, data)
-        msg = await update.message.reply_text(f"🎬 Flux Pro: {data['res']}", reply_markup=get_main_kb(uid))
+        batch = d['batch']
+        msg = await update.message.reply_text(f"🎬 Flux Pro: {batch}x {data['res']}", reply_markup=get_main_kb(uid))
         track_message(uid, msg.message_id)
-        asyncio.create_task(run_workflow(context, uid, wf, msg, 1, user_prompt=data.get("pos")))
+        asyncio.create_task(run_flux_batch(context, uid, data, batch, msg))
         
     except Exception as e:
         m = await update.message.reply_text(f"WebApp Error: {e}", reply_markup=get_main_kb(uid))
@@ -329,16 +326,21 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if d['wf'] == 'flux':
             if d['flux_store']:
                 data = d['flux_store']
-                m = await update.message.reply_text(f"🚀 Повтор Flux ({data['res']})...", reply_markup=get_main_kb(uid))
+                batch = d['batch']
+                m = await update.message.reply_text(f"🚀 Flux {batch}x ({data['res']})...", reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
-                with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f: wf = json.load(f)
-                wf = apply_flux_settings(wf, data)
-                asyncio.create_task(run_workflow(context, uid, wf, m, 1, user_prompt=data.get("pos")))
+                asyncio.create_task(run_flux_batch(context, uid, data, batch, m))
             else:
                 m = await update.message.reply_text("⚠️ Сначала настрой через Пульт!", reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
         else:
-            await run_legacy_gen(update, context, uid)
+            d['_legacy_prompt'] = None
+            cfg = WORKFLOWS[d['wf']]
+            if cfg['need_photo'] and not d['image']:
+                m = await update.message.reply_text("⚠️ Нужно фото!", reply_markup=get_main_kb(uid))
+                track_message(uid, m.message_id)
+            else:
+                asyncio.create_task(run_legacy_batch(context, uid, update))
 
     elif text == "🎛 LORA MIXER":
         m = await update.message.reply_text("🎛 Выбери Лору:", reply_markup=get_lora_kb(uid))
@@ -370,78 +372,99 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     else:
         if d['wf'] != 'flux':
-            await run_legacy_gen(update, context, uid, manual_prompt=text)
+            d['_legacy_prompt'] = text
+            cfg = WORKFLOWS[d['wf']]
+            if cfg['need_photo'] and not d['image']:
+                m = await update.message.reply_text("⚠️ Нужно фото!", reply_markup=get_main_kb(uid))
+                track_message(uid, m.message_id)
+            else:
+                asyncio.create_task(run_legacy_batch(context, uid, update))
 
 # --- EXECUTION ---
-async def run_workflow(context, uid, wf, status_msg, batch_idx, user_prompt=None):
+async def run_workflow(context, uid, wf, batch_idx, user_prompt=None):
     start_time = time.time()
-    try:
-        res = queue_prompt(wf)
-        if 'error' in res:
-            await status_msg.edit_text(f"❌ Error: {res['error']}")
-            return
+    res = queue_prompt(wf)
+    if 'error' in res:
+        return False, f"❌ {res['error']}"
 
-        pid = res['prompt_id']
-        while True:
-            h = get_history(pid)
-            if pid in h: break
-            await asyncio.sleep(1)
+    pid = res['prompt_id']
+    while True:
+        h = get_history(pid)
+        if pid in h: break
+        await asyncio.sleep(1)
 
-        out = h[pid]['outputs']
-        found = False
-        duration = time.time() - start_time
-        
-        caption = f"✅ Result {batch_idx} | ⏱ {duration:.1f}s"
-        if user_prompt:
-            caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
-        else:
-            for nid, dat in out.items():
-                if 'text' in dat:
-                    val = dat['text']
-                    txt = str(val[0] if isinstance(val, list) else val)[:800]
-                    caption += f"\n\n📝 {html.escape(txt)}"
-                    break
+    out = h[pid]['outputs']
+    found = False
+    duration = time.time() - start_time
+    
+    caption = f"✅ {batch_idx} | ⏱ {duration:.1f}s"
+    if user_prompt:
+        caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
+    else:
+        for nid, dat in out.items():
+            if 'text' in dat:
+                val = dat['text']
+                txt = str(val[0] if isinstance(val, list) else val)[:800]
+                caption += f"\n\n📝 {html.escape(txt)}"
+                break
 
-        for nid in out:
-            if 'images' in out[nid]:
-                for img in out[nid]['images']:
-                    idata = get_view(img['filename'], img['subfolder'], img['type'])
-                    # 💡 ВОЗВРАЩАЕМ МЕНЮ С ФОТОГРАФИЕЙ
-                    m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
-                    track_message(uid, m.message_id)
-                    found = True
-        
-        if found: await status_msg.delete()
-        else: await status_msg.edit_text("⚠️ No output")
-    except Exception as e: 
-        m = await context.bot.send_message(uid, f"Runtime: {e}")
-        track_message(uid, m.message_id)
+    for nid in out:
+        if 'images' in out[nid]:
+            for img in out[nid]['images']:
+                idata = get_view(img['filename'], img['subfolder'], img['type'])
+                m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
+                track_message(uid, m.message_id)
+                found = True
+    
+    return found, None
 
-async def run_legacy_gen(update, context, uid, manual_prompt=None):
+async def run_flux_batch(context, uid, data, batch, status_msg):
+    user_prompt = data.get("pos")
+    for i in range(batch):
+        if batch > 1:
+            try: await status_msg.edit_text(f"🎬 Flux {i+1}/{batch}...")
+            except: pass
+        with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f:
+            wf = json.load(f)
+        wf = apply_flux_settings(wf, data)
+        try:
+            found, err = await run_workflow(context, uid, wf, f"{i+1}/{batch}", user_prompt=user_prompt)
+            if err:
+                m = await context.bot.send_message(uid, err, reply_markup=get_main_kb(uid))
+                track_message(uid, m.message_id)
+                break
+        except Exception as e:
+            m = await context.bot.send_message(uid, f"Runtime: {e}", reply_markup=get_main_kb(uid))
+            track_message(uid, m.message_id)
+            break
+    try: await status_msg.delete()
+    except: pass
+
+async def run_legacy_batch(context, uid, update):
     d = get_user_data(uid)
     cfg = WORKFLOWS[d['wf']]
-    
-    if cfg['need_photo'] and not d['image']:
-        m = await update.message.reply_text("⚠️ Нужно фото!", reply_markup=get_main_kb(uid))
-        track_message(uid, m.message_id)
-        return
+    prompt_txt = d.get('_legacy_prompt') or (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
+    batch = d['batch']
 
-    prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
-    status = await update.message.reply_text(f"🚀 {d['batch']}x {cfg['name']}...", reply_markup=get_main_kb(uid))
+    status = await update.message.reply_text(f"🚀 {batch}x {cfg['name']}...", reply_markup=get_main_kb(uid))
     track_message(uid, status.message_id)
 
     files = get_available_loras()
-    for i in range(d['batch']):
+    for i in range(batch):
+        if batch > 1:
+            try: await status.edit_text(f"🚀 {i+1}/{batch} {cfg['name']}...")
+            except: pass
+
         with open(cfg['file'], "r") as f: wf = json.load(f)
         
         nid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
         if nid:
-             for slot in range(1, 5):
-                 idx = slot - 1
-                 if idx < len(files):
-                     if d['loras'].get(slot, 0.0) > 0:
-                         wf[nid]["inputs"][f"lora_{slot}"] = {"on": True, "lora": files[idx], "strength": d['loras'][slot]}
-                     else: wf[nid]["inputs"][f"lora_{slot}"] = {"on": False}
+            for slot in range(1, 5):
+                idx = slot - 1
+                if idx < len(files):
+                    if d['loras'].get(slot, 0.0) > 0:
+                        wf[nid]["inputs"][f"lora_{slot}"] = {"on": True, "lora": files[idx], "strength": d['loras'][slot]}
+                    else: wf[nid]["inputs"][f"lora_{slot}"] = {"on": False}
 
         if cfg['need_photo']:
             img_node = find_node_id(wf, ["LoadImage", "LoadImageMask"])
@@ -452,13 +475,25 @@ async def run_legacy_gen(update, context, uid, manual_prompt=None):
 
         tid = find_node_id(wf, ["CLIPTextEncode", "PrimitiveString"])
         if tid: 
-             k = "string" if "string" in wf[tid]["inputs"] else "text"
-             wf[tid]["inputs"][k] = prompt_txt
+            k = "string" if "string" in wf[tid]["inputs"] else "text"
+            wf[tid]["inputs"][k] = prompt_txt
 
         if "211" in wf and "inputs" in wf["211"]:
             wf["211"]["inputs"]["value"] = d['dataset_name']
 
-        asyncio.create_task(run_workflow(context, uid, wf, status, i+1))
+        try:
+            found, err = await run_workflow(context, uid, wf, f"{i+1}/{batch}")
+            if err:
+                m = await context.bot.send_message(uid, err, reply_markup=get_main_kb(uid))
+                track_message(uid, m.message_id)
+                break
+        except Exception as e:
+            m = await context.bot.send_message(uid, f"Runtime: {e}", reply_markup=get_main_kb(uid))
+            track_message(uid, m.message_id)
+            break
+
+    try: await status.delete()
+    except: pass
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
