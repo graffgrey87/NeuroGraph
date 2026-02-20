@@ -32,12 +32,13 @@ async def get_settings(uid: int):
 async def save_settings(uid: int, request: Request):
     USER_SETTINGS[uid] = await request.json()
     return {"status": "success"}
+
 from fastapi.responses import FileResponse
 
 @api_app.get("/")
 async def serve_index():
+    # Точный путь к файлу в папке templates
     return FileResponse("/workspace/templates/index.html")
-
 
 # ПУТИ
 WORKFLOWS = {
@@ -499,6 +500,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         track_message(uid, m.message_id)
 
 async def main():
+    # 💡 ЖЕСТКАЯ ОЧИСТКА ПОРТА: Автоматически убиваем зомби-процессы на порту 8099
+    os.system("fuser -k 8099/tcp >/dev/null 2>&1 || lsof -ti:8099 | xargs kill -9 >/dev/null 2>&1 || true")
+    await asyncio.sleep(1) # Даем системе секунду на освобождение сокета
+
     config = uvicorn.Config(api_app, host="0.0.0.0", port=8099, log_level="warning")
     server = uvicorn.Server(config)
     
