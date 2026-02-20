@@ -221,6 +221,7 @@ def get_batch_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
+    track_message(uid, update.message.message_id)
     msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.9 Ultimate**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
@@ -245,6 +246,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
+    track_message(uid, update.message.message_id)
     try:
         data = json.loads(update.effective_message.web_app_data.data)
         d = get_user_data(uid)
@@ -408,7 +410,8 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
         if found: await status_msg.delete()
         else: await status_msg.edit_text("⚠️ No output")
     except Exception as e: 
-        await context.bot.send_message(uid, f"Runtime: {e}")
+        m = await context.bot.send_message(uid, f"Runtime: {e}")
+        track_message(uid, m.message_id)
 
 async def run_legacy_gen(update, context, uid, manual_prompt=None):
     d = get_user_data(uid)
