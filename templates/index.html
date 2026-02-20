@@ -148,14 +148,10 @@
     </div>
 
     <button id="send" onclick="send()">QUEUE FLUX</button>
+
     <script>
         let tg = window.Telegram.WebApp; tg.expand();
         let availLoras=[], availImgs=[];
-
-        // --- UID & API BASE ---
-        const urlParams = new URLSearchParams(window.location.search);
-        const uid = urlParams.get('uid');
-        const API_BASE = window.location.origin; // Сервер 8099
 
         function upd(id,v){ document.getElementById(id).innerText=v }
         function set(el,type,val){
@@ -199,21 +195,20 @@
             document.getElementById('loras').appendChild(d);
         }
 
-        // --- INIT & LOAD USER SETTINGS ---
+        // --- INIT ---
         async function init(){
             try {
-                // Загружаем списки файлов
                 let [ckpt, clip, vae, loras, imgs] = await Promise.all([
-                    fetch('/api/checkpoints').then(r=>r.json()).catch(()=>({checkpoints:[]})),
-                    fetch('/api/clip').then(r=>r.json()).catch(()=>({clip:[]})),
-                    fetch('/api/vae').then(r=>r.json()).catch(()=>({vae:[]})),
-                    fetch('/api/loras').then(r=>r.json()).catch(()=>({loras:[]})),
-                    fetch('/api/images').then(r=>r.json()).catch(()=>({images:[]}))
+                    fetch('/api/checkpoints').then(r=>r.json()),
+                    fetch('/api/clip').then(r=>r.json()),
+                    fetch('/api/vae').then(r=>r.json()),
+                    fetch('/api/loras').then(r=>r.json()),
+                    fetch('/api/images').then(r=>r.json())
                 ]);
                 
                 let fill = (id, list, def) => {
                     let s = document.getElementById(id); s.innerHTML="";
-                    if(def) s.add(new Option(def, ""));
+                    if(def) s.add(new Option(def, "")); // Default empty
                     if(list && list.length) {
                         list.forEach(x=>s.add(new Option(x,x)));
                     } else {
@@ -224,31 +219,11 @@
                 fill('ckpt', ckpt.checkpoints);
                 fill('clip', clip.clip);
                 fill('vae', vae.vae);
+                
                 availLoras = loras.loras || [];
                 availImgs = imgs.images || [];
+                
                 renderRefs();
-
-                // 💡 ЗАГРУЗКА ПЕРСОНАЛЬНЫХ НАСТРОЕК (НОВАЯ ЛОГИКА)
-                if (uid) {
-                    try {
-                        let res = await fetch(`${API_BASE}/api/settings/${uid}`);
-                        let d = await res.json();
-                        
-                        if(d.res) document.getElementById('res').value = d.res;
-                        if(d.steps) { document.getElementById('steps').value = d.steps; upd('v_st', d.steps); }
-                        if(d.cfg) { document.getElementById('cfg').value = d.cfg; upd('v_cfg', d.cfg); }
-                        if(d.pos) document.getElementById('pos').value = d.pos;
-                        if(d.neg) document.getElementById('neg').value = d.neg;
-                        if(d.ckpt) document.getElementById('ckpt').value = d.ckpt;
-                        
-                        // Восстанавливаем кнопки камеры
-                        if(d.rot) set(document.querySelector(`#g_rot .btn:nth-child(${parseInt(d.rot)+1})`), 'rot', d.rot);
-                        if(d.ang) set(document.querySelector(`#g_ang .btn:nth-child(${parseInt(d.ang)+1})`), 'ang', d.ang);
-                        if(d.dist) set(document.querySelector(`#g_dist .btn:nth-child(${parseInt(d.dist)+1})`), 'dist', d.dist);
-
-                    } catch(err) { console.error("Config fetch error:", err); }
-                }
-
                 document.getElementById('status').innerText = "Ready";
                 document.getElementById('status').style.color = "#00ff00";
             } catch(e) {
@@ -258,8 +233,8 @@
         }
         init();
 
-        // --- SEND & SAVE USER SETTINGS ---
-        async function send(){
+        // --- SEND ---
+        function send(){
             let ckpt = document.getElementById('ckpt').value;
             if(!ckpt || ckpt === "") {
                 alert("❌ Please select a Checkpoint Model!");
@@ -267,34 +242,38 @@
             }
 
             let d = {
+                // Model
                 ckpt: ckpt,
                 clip: document.getElementById('clip').value,
                 vae: document.getElementById('vae').value,
                 dtype: document.getElementById('dtype').value,
                 sage: document.getElementById('sage').value,
+                
+                // Gen
                 res: document.getElementById('res').value,
                 steps: document.getElementById('steps').value,
                 cfg: document.getElementById('cfg').value,
                 seed: document.getElementById('seed').value,
                 pos: document.getElementById('pos').value,
                 neg: document.getElementById('neg').value,
+                
+                // Camera/Inpaint
                 rot: document.getElementById('rot').value,
                 ang: document.getElementById('ang').value,
                 dist: document.getElementById('dist').value,
                 ctx: document.getElementById('ctx').value,
                 resc: document.getElementById('resc').value,
                 rscale: document.getElementById('rscale').value,
+                
                 loras: [], refs: []
             };
             
-            // Сбор LoRA
             document.querySelectorAll('.l-sel').forEach((s,i)=>{
                 if(s.value && s.value !== "") {
                     d.loras.push({name:s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value)});
                 }
             });
 
-            // Сбор референсов
             for(let i=1; i<=6; i++){
                 let im = document.getElementById(`im_${i}`).value;
                 if(im && im !== "") {
@@ -306,18 +285,6 @@
                     });
                 }
             }
-
-            // 💡 СОХРАНЕНИЕ НАСТРОЕК (НОВАЯ ЛОГИКА)
-            if (uid) {
-                try {
-                    await fetch(`${API_BASE}/api/settings/${uid}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(d)
-                    });
-                } catch(err) { console.error("Save error:", err); }
-            }
-
             tg.sendData(JSON.stringify(d));
         }
     </script>
