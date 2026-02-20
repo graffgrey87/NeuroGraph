@@ -1126,11 +1126,11 @@ bash -c "rm -rf /workspace/installer; git clone https://github.com/graffgrey87/N
 
 
 
-HF\_TOKEN                hf\_ozWJtFWjOAThOIByFuGeZjibczBRTaGISh
+HF\_TOKEN               
 
 
 
-CIVITAI\_API\_TOKEN       facac662a2de39d83fbe7bc974b0fb03
+CIVITAI\_API\_TOKEN    
 
 
 
@@ -1146,7 +1146,7 @@ JUPYTER\_PASSWORD        n0d1esbdqbxkz3f1xnwi
 
 
 
-TG\_TOKEN                8242209319:AAHJiX5qJOUC3Bmmxwfw0frNbHt0MWtzUqw
+TG\_TOKEN              
 
 
 
