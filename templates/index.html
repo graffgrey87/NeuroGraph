@@ -160,6 +160,68 @@
             el.classList.add('active');
         }
 
+        // --- RESTORE SETTINGS FROM URL ---
+        function getInitData(){
+            try {
+                let p = new URLSearchParams(window.location.search);
+                let raw = p.get('init');
+                if(!raw) return null;
+                let b64 = raw.replace(/-/g,'+').replace(/_/g,'/');
+                while(b64.length % 4) b64 += '=';
+                return JSON.parse(atob(b64));
+            } catch(e){ return null; }
+        }
+
+        function restoreSettings(d){
+            if(!d) return;
+            ['ckpt','clip','vae','dtype','sage','res','seed'].forEach(k=>{
+                let el = document.getElementById(k);
+                if(el && d[k] !== undefined) el.value = d[k];
+            });
+            if(d.pos !== undefined) document.getElementById('pos').value = d.pos;
+            if(d.neg !== undefined) document.getElementById('neg').value = d.neg;
+
+            let rm = {steps:'v_st', cfg:'v_cfg', ctx:'v_ctx', resc:'v_resc', rscale:'v_rs'};
+            for(let [id, badge] of Object.entries(rm)){
+                if(d[id] !== undefined){
+                    let el = document.getElementById(id);
+                    if(el){ el.value = d[id]; upd(badge, d[id]); }
+                }
+            }
+
+            ['rot','ang','dist'].forEach(type=>{
+                if(d[type] !== undefined){
+                    let val = parseInt(d[type]);
+                    document.getElementById(type).value = val;
+                    document.querySelectorAll(`#g_${type} .btn`).forEach(b=>{
+                        b.classList.remove('active');
+                        if((b.getAttribute('onclick')||'').includes(`'${type}',${val})`)) b.classList.add('active');
+                    });
+                }
+            });
+
+            if(d.loras && d.loras.length){
+                d.loras.forEach(l=>{
+                    addLora();
+                    let sels = document.querySelectorAll('.l-sel');
+                    let ws = document.querySelectorAll('.l-w');
+                    sels[sels.length-1].value = l.name;
+                    ws[ws.length-1].value = l.weight;
+                });
+            }
+
+            if(d.refs && d.refs.length){
+                d.refs.forEach(r=>{
+                    let el = document.getElementById(`im_${r.idx}`);
+                    if(el) el.value = r.image;
+                    if(r.active){ let a = document.getElementById(`act_${r.idx}`); if(a) a.classList.add('on'); }
+                    if(r.flip){ let f = document.getElementById(`flp_${r.idx}`); if(f) f.classList.add('on'); }
+                    let rt = document.getElementById(`rt_${r.idx}`);
+                    if(rt && r.rot) rt.value = r.rot;
+                });
+            }
+        }
+
         // --- RENDER REFS ---
         function renderRefs(){
             let h = "";
@@ -226,6 +288,11 @@
                 renderRefs();
                 document.getElementById('status').innerText = "Ready";
                 document.getElementById('status').style.color = "#00ff00";
+                let saved = getInitData();
+                if(saved){
+                    restoreSettings(saved);
+                    document.getElementById('status').innerText = "Restored ✓";
+                }
             } catch(e) {
                 document.getElementById('status').innerText = "Error loading API";
                 document.getElementById('status').style.color = "red";
