@@ -90,9 +90,10 @@ def apply_flux_settings(wf, data):
     wf["161"]["inputs"]["value"] = data["pos"]
     wf["162"]["inputs"]["value"] = data["neg"]
     
-    # 3. CONTROLS
-    wf["146"]["inputs"]["value"] = int(data["rot"]); wf["144"]["inputs"]["value"] = int(data["ang"]) 
-    wf["151"]["inputs"]["value"] = int(data["dist"])
+    # 3. CONTROLS (mxSlider: Xi/Xf, не value)
+    wf["146"]["inputs"]["Xi"] = int(data["rot"]); wf["146"]["inputs"]["Xf"] = int(data["rot"])
+    wf["144"]["inputs"]["Xi"] = int(data["ang"]); wf["144"]["inputs"]["Xf"] = int(data["ang"])
+    wf["151"]["inputs"]["Xi"] = int(data["dist"]); wf["151"]["inputs"]["Xf"] = int(data["dist"])
     wf["228"]["inputs"]["Xi"] = float(data["ctx"]); wf["228"]["inputs"]["Xf"] = float(data["ctx"])
     wf["229"]["inputs"]["Xi"] = float(data["resc"]); wf["229"]["inputs"]["Xf"] = float(data["resc"])
     wf["139"]["inputs"]["Xi"] = float(data["rscale"]); wf["139"]["inputs"]["Xf"] = float(data["rscale"])
