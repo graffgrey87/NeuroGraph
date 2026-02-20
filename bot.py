@@ -272,7 +272,7 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         wf = apply_flux_settings(wf, data)
         msg = await update.message.reply_text(f"🎬 Flux Pro: {data['res']}", reply_markup=get_main_kb(uid))
         track_message(uid, msg.message_id)
-        asyncio.create_task(run_workflow(context, uid, wf, msg, 1))
+        asyncio.create_task(run_workflow(context, uid, wf, msg, 1, user_prompt=data.get("pos")))
         
     except Exception as e:
         m = await update.message.reply_text(f"WebApp Error: {e}", reply_markup=get_main_kb(uid))
@@ -333,7 +333,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 track_message(uid, m.message_id)
                 with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f: wf = json.load(f)
                 wf = apply_flux_settings(wf, data)
-                asyncio.create_task(run_workflow(context, uid, wf, m, 1))
+                asyncio.create_task(run_workflow(context, uid, wf, m, 1, user_prompt=data.get("pos")))
             else:
                 m = await update.message.reply_text("⚠️ Сначала настрой через Пульт!", reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
@@ -373,7 +373,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await run_legacy_gen(update, context, uid, manual_prompt=text)
 
 # --- EXECUTION ---
-async def run_workflow(context, uid, wf, status_msg, batch_idx):
+async def run_workflow(context, uid, wf, status_msg, batch_idx, user_prompt=None):
     start_time = time.time()
     try:
         res = queue_prompt(wf)
@@ -392,12 +392,15 @@ async def run_workflow(context, uid, wf, status_msg, batch_idx):
         duration = time.time() - start_time
         
         caption = f"✅ Result {batch_idx} | ⏱ {duration:.1f}s"
-        for nid, dat in out.items():
-            if 'text' in dat:
-                val = dat['text']
-                txt = str(val[0] if isinstance(val, list) else val)[:800]
-                caption += f"\n\n📝 {html.escape(txt)}"
-                break
+        if user_prompt:
+            caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
+        else:
+            for nid, dat in out.items():
+                if 'text' in dat:
+                    val = dat['text']
+                    txt = str(val[0] if isinstance(val, list) else val)[:800]
+                    caption += f"\n\n📝 {html.escape(txt)}"
+                    break
 
         for nid in out:
             if 'images' in out[nid]:
