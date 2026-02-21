@@ -57,38 +57,41 @@ download_model() {
     local path="${3:-$L_PATH}"
 
     if [ -f "$path/$file" ] && [ -s "$path/$file" ]; then
-        echo "  ✅ $file (exists)"
+        local sz=$(du -h "$path/$file" | cut -f1)
+        echo "  ✅ $file ($sz)"
         return 0
     fi
 
     rm -f "$path/$file" 2>/dev/null
 
-    echo "  📥 $file ..."
+    local start_t=$SECONDS
     if $USE_ARIA2; then
-        local -a cmd=(aria2c -x 16 -s 16 -k 1M --file-allocation=none --auto-file-renaming=false --allow-overwrite=true -d "$path" -o "$file")
+        local -a cmd=(aria2c -x 16 -s 16 -k 1M --file-allocation=none --auto-file-renaming=false --allow-overwrite=true --console-log-level=error --summary-interval=0 --download-result=hide -d "$path" -o "$file")
         [ -n "$HF_TOKEN" ] && cmd+=(--header="Authorization: Bearer $HF_TOKEN")
         cmd+=("$url")
-        "${cmd[@]}"
+        "${cmd[@]}" > /dev/null 2>&1
         local rc=$?
         if [ $rc -ne 0 ] || [ ! -s "$path/$file" ]; then
-            echo "  ⚠️ aria2c failed (rc=$rc), trying wget..."
+            echo "  ⚠️ $file — aria2c fail, wget fallback..."
             rm -f "$path/$file" 2>/dev/null
             if [ -n "$HF_TOKEN" ]; then
-                wget -q --show-progress --header "Authorization: Bearer $HF_TOKEN" -O "$path/$file" "$url"
+                wget -q --header "Authorization: Bearer $HF_TOKEN" -O "$path/$file" "$url"
             else
-                wget -q --show-progress -O "$path/$file" "$url"
+                wget -q -O "$path/$file" "$url"
             fi
         fi
     else
         if [ -n "$HF_TOKEN" ]; then
-            wget -q --show-progress --header "Authorization: Bearer $HF_TOKEN" -O "$path/$file" "$url"
+            wget -q --header "Authorization: Bearer $HF_TOKEN" -O "$path/$file" "$url"
         else
-            wget -q --show-progress -O "$path/$file" "$url"
+            wget -q -O "$path/$file" "$url"
         fi
     fi
 
+    local elapsed=$(( SECONDS - start_t ))
     if [ -s "$path/$file" ]; then
-        echo "  ✅ $file OK"
+        local sz=$(du -h "$path/$file" | cut -f1)
+        echo "  ✅ $file ($sz, ${elapsed}s)"
     else
         echo "  ❌ $file FAILED"
         rm -f "$path/$file" 2>/dev/null
