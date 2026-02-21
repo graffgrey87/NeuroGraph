@@ -122,3 +122,145 @@ except Exception as e:
 | `handle_callback()` | N/A (inline) | ✅ (было) |
 | `run_workflow()` | N/A | ✅ результаты (было), ✅ ошибки |
 | `run_legacy_gen()` | N/A | ✅ (было) |
+
+---
+
+## 3. Camera Control (Flux) — нерабочие слайдеры камеры
+
+**Файл:** `bot.py` → `apply_flux_settings()`
+
+### Проблема
+
+Слайдеры камеры (Rotation, Angle, Distance) в WebApp не влияли на генерацию. Независимо от выбранных значений, результат был идентичен — камера оставалась в позиции по умолчанию (Off).
+
+### Причина
+
+Ноды 146 (Rotation), 144 (Angle), 151 (Distance) — тип `mxSlider`. Этот тип принимает значения через ключи `Xi` и `Xf` в `inputs`. Бот записывал значения в несуществующий ключ `"value"`, который ComfyUI молча игнорировал:
+```python
+# Было (НЕПРАВИЛЬНО):
+wf["146"]["inputs"]["value"] = int(data["rot"])
+wf["144"]["inputs"]["value"] = int(data["ang"])
+wf["151"]["inputs"]["value"] = int(data["dist"])
+```
+При этом для нод того же типа `mxSlider` — Steps (119) и CFG (118) — бот **корректно** писал в `Xi`/`Xf`. Ошибка была только в трёх камерных нодах.
+
+### Решение
+
+Запись в `Xi`/`Xf` по аналогии с Steps/CFG:
+```python
+# Стало (ПРАВИЛЬНО):
+wf["146"]["inputs"]["Xi"] = int(data["rot"]); wf["146"]["inputs"]["Xf"] = int(data["rot"])
+wf["144"]["inputs"]["Xi"] = int(data["ang"]); wf["144"]["inputs"]["Xf"] = int(data["ang"])
+wf["151"]["inputs"]["Xi"] = int(data["dist"]); wf["151"]["inputs"]["Xf"] = int(data["dist"])
+```
+
+### Цепочка данных камеры
+
+```
+WebApp (число 0-5) → bot.py apply_flux_settings
+    ↓
+mxSlider (Xi/Xf) → выход: число-индекс
+    ↓
+ImpactStringSelector → выбирает строку по индексу из списка
+    (напр. индекс 3 → "Сбоку, side-view, the person is facing the camera sideways.")
+    ↓
+StringConcatenate → склеивает с остальным промптом
+    ↓
+CLIP TextEncode → conditioning для генерации
+```
+
+### Ноды Camera Control в TI2I_Flux2_Klein.json
+
+| Функция | Slider (mxSlider) | Selector (ImpactStringSelector) | Значения |
+|---|---|---|---|
+| Rotation | 146 | 149 | 0=Off, 1=Front, 2=Front¾, 3=Side, 4=Rear¾, 5=Rear |
+| Angle | 144 | 143 | 0=Off, 1=V.Low, 2=Low, 3=Straight, 4=High |
+| Distance | 151 | 150 | 0=Off, 1=Close-Up, 2=Half-Body, 3=Full-Body |
+
+---
+
+## 4. Flux Caption — длинный текст под фото
+
+**Файл:** `bot.py` → `run_workflow()`
+
+### Проблема
+
+После генерации в режиме Flux подпись к фото содержала полный текст из ComfyUI — включая все строки, добавленные Camera Control и StringConcatenate. Получалось полстраницы текста вместо краткого промпта.
+
+### Причина
+
+`run_workflow` брал первый `text`-output из истории ComfyUI (обычно нода ShowText/207). В Flux-воркфлоу туда попадает **финальный** промпт — пользовательский текст + камерные описания + технические токены.
+
+### Решение
+
+Добавлен параметр `user_prompt` в `run_workflow`. Для Flux передаётся `data["pos"]` (текст из поля Positive в WebApp). Если `user_prompt` задан — показывается он, иначе — текст из ComfyUI (для Legacy-режимов):
+```python
+caption = f"✅ {batch_idx} | ⏱ {duration:.1f}s"
+if user_prompt:
+    caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
+else:
+    # fallback: текст из ComfyUI (Legacy edit/gen)
+    ...
+```
+
+Legacy-режимы (edit/gen) не затронуты.
+
+---
+
+## 5. Рефакторинг архитектуры генерации
+
+**Файл:** `bot.py`
+
+### 5.1 repair_workflow — убран Reroute-фоллбэк
+
+**Было:** Функция принудительно ставила `class_type = "Reroute"` любой ноде без `class_type`. Это был костыль для сломанного JSON, когда `TI2I_Flux2_Klein.json` содержал ноды без `class_type`.
+
+**Причина удаления:** После пересохранения JSON через ComfyUI все 143 ноды имеют корректный `class_type`. Костыль больше не нужен и потенциально опасен — при появлении ноды без `class_type` по другой причине он замаскирует проблему.
+
+**Стало:** Оставлена только замена `\` на `/` (Linux path fix).
+
+### 5.2 run_workflow — чистая функция
+
+**Было:** `run_workflow` принимал `status_msg`, сам удалял/редактировал его. При batch > 1 несколько параллельных задач разделяли один `status_msg` — первая завершившаяся удаляла сообщение, остальные падали с `MessageNotFound`.
+
+**Стало:** `run_workflow` — чистая функция. Принимает workflow, выполняет одну генерацию, возвращает `(found: bool, error: str | None)`. Не управляет сообщениями — это ответственность вызывающего кода.
+
+### 5.3 run_legacy_batch — последовательный batch
+
+**Было:** `run_legacy_gen` запускал `asyncio.create_task(run_workflow(...))` в цикле — все задачи работали параллельно с общим `status_msg`.
+
+**Стало:** `run_legacy_batch` выполняет генерации **последовательно**. ComfyUI всё равно обрабатывает их по одной (внутренняя очередь), поэтому параллельность не давала выигрыша. Статусное сообщение обновляется с прогрессом (`🚀 3/5 Редакт (Qwen)...`), удаляется в конце. Ошибки прерывают batch с сообщением.
+
+---
+
+## 6. Flux Batch — поддержка кнопки "Кол-во"
+
+**Файл:** `bot.py` → новая функция `run_flux_batch()`
+
+### Проблема
+
+Кнопка «🔢 Кол-во» (batch) работала только для Legacy-режимов (edit/gen). В режиме Flux генерировалась всегда 1 картинка, значение batch игнорировалось.
+
+### Причина
+
+Оба Flux-пути (WebApp и кнопка «ГЕНЕРАЦИЯ») вызывали `run_workflow` ровно один раз с `batch_idx=1`. Значение `d['batch']` не читалось.
+
+### Решение
+
+Создана функция `run_flux_batch(context, uid, data, batch, status_msg)`:
+- Цикл `batch` итераций
+- Каждая итерация: загрузка свежего workflow из JSON + `apply_flux_settings` (новый рандомный seed при seed=-1)
+- Статусное сообщение обновляется с прогрессом (`🎬 Flux 3/5...`)
+- Ошибки прерывают batch
+- Статусное сообщение удаляется по завершении
+
+Оба Flux-пути обновлены:
+```python
+# WebApp (handle_webapp):
+asyncio.create_task(run_flux_batch(context, uid, data, batch, msg))
+
+# Кнопка "ГЕНЕРАЦИЯ" (handle_msg):
+asyncio.create_task(run_flux_batch(context, uid, data, batch, m))
+```
+
+Кнопка «Кол-во» теперь влияет на все три режима одинаково.
