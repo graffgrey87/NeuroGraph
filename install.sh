@@ -51,29 +51,47 @@ echo "✅ Ноды готовы."
 echo "⬇️ Менеджер загрузок..."
 mkdir -p "$L_PATH" "$CKPT_PATH" "$VAE_PATH" "$CLIP_PATH"
 
-ARIA_OPTS="-x 16 -s 16 -k 1M --file-allocation=none --console-log-level=notice --summary-interval=5"
-
 download_model() {
     local url="$1"
     local file="$2"
     local path="${3:-$L_PATH}"
 
-    if [ -f "$path/$file" ]; then
-        echo "  ✅ $file"
+    if [ -f "$path/$file" ] && [ -s "$path/$file" ]; then
+        echo "  ✅ $file (exists)"
         return 0
     fi
 
-    echo "  📥 $file"
+    rm -f "$path/$file" 2>/dev/null
+
+    echo "  📥 $file ..."
     if $USE_ARIA2; then
-        local hdr=""
-        [ -n "$HF_TOKEN" ] && hdr="--header=Authorization: Bearer $HF_TOKEN"
-        aria2c $ARIA_OPTS $hdr -d "$path" -o "$file" "$url" 2>&1 | tail -1
-    else
-        if [ -z "$HF_TOKEN" ]; then
-            wget -q --show-progress -O "$path/$file" "$url"
-        else
-            wget -q --show-progress --header "Authorization: Bearer $HF_TOKEN" -O "$path/$file" "$url"
+        local -a cmd=(aria2c -x 16 -s 16 -k 1M --file-allocation=none --auto-file-renaming=false --allow-overwrite=true -d "$path" -o "$file")
+        [ -n "$HF_TOKEN" ] && cmd+=(--header="Authorization: Bearer $HF_TOKEN")
+        cmd+=("$url")
+        "${cmd[@]}"
+        local rc=$?
+        if [ $rc -ne 0 ] || [ ! -s "$path/$file" ]; then
+            echo "  ⚠️ aria2c failed (rc=$rc), trying wget..."
+            rm -f "$path/$file" 2>/dev/null
+            if [ -n "$HF_TOKEN" ]; then
+                wget -q --show-progress --header "Authorization: Bearer $HF_TOKEN" -O "$path/$file" "$url"
+            else
+                wget -q --show-progress -O "$path/$file" "$url"
+            fi
         fi
+    else
+        if [ -n "$HF_TOKEN" ]; then
+            wget -q --show-progress --header "Authorization: Bearer $HF_TOKEN" -O "$path/$file" "$url"
+        else
+            wget -q --show-progress -O "$path/$file" "$url"
+        fi
+    fi
+
+    if [ -s "$path/$file" ]; then
+        echo "  ✅ $file OK"
+    else
+        echo "  ❌ $file FAILED"
+        rm -f "$path/$file" 2>/dev/null
     fi
 }
 
