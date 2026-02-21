@@ -28,14 +28,49 @@ PROMPT_NSFW = "На фото крупным планом показана выс
 
 LORA_DIR_ROOT = os.path.join(BASE_DIR, "ComfyUI/models/loras")
 LORA_DIR_QWEN = os.path.join(LORA_DIR_ROOT, "qwen")
+USER_DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
+GEN_TIMEOUT = 300
 
 user_data = {}
+
+def load_user_data():
+    global user_data
+    if os.path.exists(USER_DATA_FILE):
+        try:
+            with open(USER_DATA_FILE, "r") as f:
+                raw = json.load(f)
+            user_data = {int(k): v for k, v in raw.items()}
+            for uid in user_data:
+                user_data[uid].setdefault('msg_ids', [])
+                user_data[uid].setdefault('awaiting_lora', None)
+                user_data[uid].setdefault('awaiting_custom_batch', False)
+                user_data[uid].setdefault('awaiting_dataset_name', False)
+                if 'loras' in user_data[uid] and isinstance(user_data[uid]['loras'], dict):
+                    user_data[uid]['loras'] = {int(k): v for k, v in user_data[uid]['loras'].items()}
+            print(f"💾 Loaded {len(user_data)} user(s) from disk")
+        except Exception as e:
+            print(f"⚠️ Failed to load user_data: {e}")
+            user_data = {}
+
+def save_user_data():
+    try:
+        saveable = {}
+        for uid, d in user_data.items():
+            saveable[str(uid)] = {k: v for k, v in d.items() if k != 'msg_ids'}
+        with open(USER_DATA_FILE, "w") as f:
+            json.dump(saveable, f, ensure_ascii=False, separators=(',', ':'))
+    except Exception as e:
+        print(f"⚠️ Failed to save user_data: {e}")
+
+load_user_data()
 
 if not BOT_TOKEN: sys.exit("❌ TOKEN MISSING")
 
 # ==========================================
 # 🛠 UTILS
 # ==========================================
+cancel_flags = {}
+
 def get_user_data(uid):
     if uid not in user_data:
         user_data[uid] = {
@@ -221,7 +256,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
     track_message(uid, update.message.message_id)
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v7.9 Ultimate**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v8.3**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -249,9 +284,9 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         data = json.loads(update.effective_message.web_app_data.data)
         d = get_user_data(uid)
-        d['flux_store'] = data # 💾 Save
+        d['flux_store'] = data
+        save_user_data()
         
-        # 💡 ВАЖНО: Присылаем сообщение с ОБНОВЛЕННОЙ КНОПКОЙ
         m_upd = await update.message.reply_text("💾 Настройки обновлены! Кнопка 'Пульт' обновлена.", reply_markup=get_main_kb(uid))
         track_message(uid, m_upd.message_id)
 
@@ -288,6 +323,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text.isdigit():
             d['batch'] = int(text)
             d['awaiting_custom_batch'] = False
+            save_user_data()
             m = await update.message.reply_text(f"🔢 Batch: {d['batch']}", reply_markup=get_main_kb(uid))
         else: m = await update.message.reply_text("Введите число", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
@@ -296,6 +332,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if d.get('awaiting_dataset_name'):
         d['dataset_name'] = text
         d['awaiting_dataset_name'] = False
+        save_user_data()
         m = await update.message.reply_text(f"🏷 Set: {text}", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
         return
@@ -305,6 +342,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             val = float(text.replace(",", "."))
             d['loras'][d['awaiting_lora']] = val
             d['awaiting_lora'] = None
+            save_user_data()
             m = await update.message.reply_text("🎛 Mixer:", reply_markup=get_lora_kb(uid))
         except: m = await update.message.reply_text("Число!", reply_markup=get_lora_kb(uid))
         track_message(uid, m.message_id)
@@ -362,11 +400,13 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text.startswith("🔄"):
         keys = list(WORKFLOWS.keys())
         d['wf'] = keys[(keys.index(d['wf']) + 1) % len(keys)]
+        save_user_data()
         m = await update.message.reply_text(f"🔄 Режим: **{WORKFLOWS[d['wf']]['name']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
         track_message(uid, m.message_id)
 
     elif "Режим:" in text:
         d['mode'] = 'nsfw' if d['mode'] == 'normal' else 'normal'
+        save_user_data()
         m = await update.message.reply_text(f"Режим: {d['mode'].upper()}", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
@@ -385,10 +425,14 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None):
     start_time = time.time()
     res = queue_prompt(wf)
     if 'error' in res:
-        return False, f"❌ {res['error']}"
+        return False, f"❌ {res['error']}", None
 
     pid = res['prompt_id']
     while True:
+        if time.time() - start_time > GEN_TIMEOUT:
+            try: urllib.request.urlopen(urllib.request.Request(f"http://{COMFY_SERVER}/interrupt", method='POST'))
+            except: pass
+            return False, f"⏰ Таймаут ({GEN_TIMEOUT}s)", None
         h = get_history(pid)
         if pid in h: break
         await asyncio.sleep(1)
@@ -397,7 +441,15 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None):
     found = False
     duration = time.time() - start_time
     
+    used_seed = None
+    for nid_check in ["117", "122"]:
+        if nid_check in wf and "seed" in wf[nid_check].get("inputs", {}):
+            used_seed = wf[nid_check]["inputs"]["seed"]
+            break
+
     caption = f"✅ {batch_idx} | ⏱ {duration:.1f}s"
+    if used_seed is not None:
+        caption += f" | 🎲 {used_seed}"
     if user_prompt:
         caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
     else:
@@ -416,19 +468,26 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None):
                 track_message(uid, m.message_id)
                 found = True
     
-    return found, None
+    return found, None, used_seed
+
+def stop_kb():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⛔ СТОП", callback_data="stop_gen")]])
 
 async def run_flux_batch(context, uid, data, batch, status_msg):
+    cancel_flags[uid] = False
     user_prompt = data.get("pos")
     for i in range(batch):
-        if batch > 1:
-            try: await status_msg.edit_text(f"🎬 Flux {i+1}/{batch}...")
-            except: pass
+        if cancel_flags.get(uid):
+            m = await context.bot.send_message(uid, "⛔ Остановлено", reply_markup=get_main_kb(uid))
+            track_message(uid, m.message_id)
+            break
+        try: await status_msg.edit_text(f"🎬 Flux {i+1}/{batch}...", reply_markup=stop_kb())
+        except: pass
         with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f:
             wf = json.load(f)
         wf = apply_flux_settings(wf, data)
         try:
-            found, err = await run_workflow(context, uid, wf, f"{i+1}/{batch}", user_prompt=user_prompt)
+            found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}", user_prompt=user_prompt)
             if err:
                 m = await context.bot.send_message(uid, err, reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
@@ -441,19 +500,23 @@ async def run_flux_batch(context, uid, data, batch, status_msg):
     except: pass
 
 async def run_legacy_batch(context, uid, update):
+    cancel_flags[uid] = False
     d = get_user_data(uid)
     cfg = WORKFLOWS[d['wf']]
     prompt_txt = d.get('_legacy_prompt') or (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
     batch = d['batch']
 
-    status = await update.message.reply_text(f"🚀 {batch}x {cfg['name']}...", reply_markup=get_main_kb(uid))
+    status = await update.message.reply_text(f"🚀 {batch}x {cfg['name']}...", reply_markup=stop_kb())
     track_message(uid, status.message_id)
 
     files = get_available_loras()
     for i in range(batch):
-        if batch > 1:
-            try: await status.edit_text(f"🚀 {i+1}/{batch} {cfg['name']}...")
-            except: pass
+        if cancel_flags.get(uid):
+            m = await context.bot.send_message(uid, "⛔ Остановлено", reply_markup=get_main_kb(uid))
+            track_message(uid, m.message_id)
+            break
+        try: await status.edit_text(f"🚀 {i+1}/{batch} {cfg['name']}...", reply_markup=stop_kb())
+        except: pass
 
         with open(cfg['file'], "r") as f: wf = json.load(f)
         
@@ -482,7 +545,7 @@ async def run_legacy_batch(context, uid, update):
             wf["211"]["inputs"]["value"] = d['dataset_name']
 
         try:
-            found, err = await run_workflow(context, uid, wf, f"{i+1}/{batch}")
+            found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}")
             if err:
                 m = await context.bot.send_message(uid, err, reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
@@ -507,6 +570,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("⌨️ **Введите число**:", parse_mode="Markdown")
         else:
             d['batch'] = int(q.data.split("_")[1])
+            save_user_data()
             await q.message.delete()
             m = await context.bot.send_message(uid, f"🔢 Batch: **{d['batch']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
             track_message(uid, m.message_id)
@@ -518,6 +582,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         idx = slot - 1
         lname = files[idx] if idx < len(files) else f"Slot {slot}"
         await q.message.edit_text(f"✍️ **{lname}**\nВведите вес (0.1 - 1.0):", parse_mode="Markdown")
+
+    elif q.data == "stop_gen":
+        cancel_flags[uid] = True
+        try: urllib.request.urlopen(urllib.request.Request(f"http://{COMFY_SERVER}/interrupt", method='POST'))
+        except: pass
+        try: await q.message.edit_text("⛔ Останавливаю...")
+        except: pass
 
     elif q.data in ["close_links", "close_lora"]: 
         await q.message.delete()
@@ -532,5 +603,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v8.1 Ultimate Started on {RUNPOD_ID}")
+    print(f"✅ Bot v8.3 Started on {RUNPOD_ID}")
     app.run_polling()
