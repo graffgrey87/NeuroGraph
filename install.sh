@@ -24,7 +24,7 @@ echo "✅ Порт 3000 активен."
 # 2. ARIA2 + БИБЛИОТЕКИ
 echo "📦 Устанавливаю aria2 и библиотеки..."
 apt-get update -qq && apt-get install -y -qq aria2 > /dev/null 2>&1
-$VENV_PIP install python-telegram-bot requests websocket-client aiohttp fastapi uvicorn Jinja2 python-multipart > /dev/null 2>&1
+$VENV_PIP install python-telegram-bot requests websocket-client websockets aiohttp fastapi uvicorn Jinja2 python-multipart Pillow > /dev/null 2>&1
 
 USE_ARIA2=false
 if command -v aria2c &> /dev/null; then

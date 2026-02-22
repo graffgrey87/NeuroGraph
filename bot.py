@@ -1,4 +1,4 @@
-import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64
+import websockets, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
@@ -42,6 +42,8 @@ def load_user_data():
             user_data = {int(k): v for k, v in raw.items()}
             for uid in user_data:
                 user_data[uid].setdefault('msg_ids', [])
+                user_data[uid].setdefault('history', [])
+                user_data[uid].setdefault('presets', {})
                 user_data[uid].setdefault('awaiting_lora', None)
                 user_data[uid].setdefault('awaiting_custom_batch', False)
                 user_data[uid].setdefault('awaiting_dataset_name', False)
@@ -71,11 +73,20 @@ if not BOT_TOKEN: sys.exit("❌ TOKEN MISSING")
 # ==========================================
 cancel_flags = {}
 
+def check_comfy_health():
+    try:
+        req = urllib.request.Request(f"http://{COMFY_SERVER}/system_stats")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            r.read()
+        return True, ""
+    except Exception as e:
+        return False, f"⚠️ ComfyUI недоступен: {e}"
+
 def get_user_data(uid):
     if uid not in user_data:
         user_data[uid] = {
             'image': None, 'mode': 'normal', 'wf': 'flux', 'batch': 1, 
-            'dataset_name': 'Batch', 'msg_ids': [], 
+            'dataset_name': 'Batch', 'msg_ids': [], 'history': [], 'presets': {},
             'loras': {1:0.0, 2:0.0, 3:0.0, 4:0.0}, 
             'flux_store': None,
             'awaiting_lora': None, 'awaiting_custom_batch': False, 'awaiting_dataset_name': False
@@ -98,7 +109,7 @@ def repair_workflow(wf):
         clean_wf[nid] = node
     return clean_wf
 
-def apply_flux_settings(wf, data):
+def apply_flux_settings(wf, data, dataset_name="Batch", batch_idx=1):
     # 1. MODEL
     if "116:129" in wf:
         wf["116:129"]["inputs"]["model_name"] = data["ckpt"]
@@ -148,6 +159,11 @@ def apply_flux_settings(wf, data):
         if f"{gid}:214" in wf: wf[f"{gid}:214"]["inputs"]["value"] = r["active"]
         if f"{gid}:213" in wf: wf[f"{gid}:213"]["inputs"]["switch"] = r["flip"]
         if f"{gid}:209" in wf: wf[f"{gid}:209"]["inputs"]["rotation"] = r["rot"]
+
+    # 5. DATASET NAMING (SaveImage node 9)
+    if "9" in wf and "inputs" in wf["9"]:
+        wf["9"]["inputs"]["filename_prefix"] = f"{dataset_name}/{dataset_name}_{batch_idx:03d}"
+
     return wf
 
 async def check_auth(update):
@@ -205,9 +221,9 @@ def get_main_kb(uid):
     final_url = WEBAPP_URL
     if d['flux_store']:
         try:
-            # Сжимаем JSON (удаляем пробелы)
-            json_str = json.dumps(d['flux_store'], separators=(',', ':'))
-            # Кодируем в URL-Safe Base64
+            init_data = dict(d['flux_store'])
+            init_data['_uid'] = str(uid)
+            json_str = json.dumps(init_data, separators=(',', ':'))
             b64_str = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('utf-8').rstrip("=")
             final_url = f"{WEBAPP_URL}?init={b64_str}"
         except: pass
@@ -217,7 +233,7 @@ def get_main_kb(uid):
         [KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
         [KeyboardButton(f"🔄 WF: {WORKFLOWS[d['wf']]['name']}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
         [KeyboardButton(f"{ico} Режим: {d['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
-        [KeyboardButton(f"🏷 Сет: {d['dataset_name']}"), KeyboardButton("🌐 Ссылки")]
+        [KeyboardButton(f"🏷 Сет: {d['dataset_name']}"), KeyboardButton("📁 История"), KeyboardButton("🌐 Ссылки")]
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -388,6 +404,26 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         m = await update.message.reply_text("Links:", reply_markup=get_links_kb())
         track_message(uid, m.message_id)
 
+    elif text == "📁 История":
+        hist = d.get('history', [])
+        if not hist:
+            m = await update.message.reply_text("💭 Нет истории", reply_markup=get_main_kb(uid))
+            track_message(uid, m.message_id)
+        else:
+            items = hist[-10:]
+            media = []
+            for h in items:
+                try:
+                    idata = get_view(h['filename'], h['subfolder'], h['type'])
+                    media.append(InputMediaPhoto(idata))
+                except: pass
+            if media:
+                msgs = await context.bot.send_media_group(uid, media)
+                for mm in msgs: track_message(uid, mm.message_id)
+            else:
+                m = await update.message.reply_text("⚠️ Файлы недоступны", reply_markup=get_main_kb(uid))
+                track_message(uid, m.message_id)
+
     elif text.startswith("🔢"):
         m = await update.message.reply_text("Кол-во:", reply_markup=get_batch_kb())
         track_message(uid, m.message_id)
@@ -421,22 +457,89 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 asyncio.create_task(run_legacy_batch(context, uid, update))
 
 # --- EXECUTION ---
-async def run_workflow(context, uid, wf, batch_idx, user_prompt=None):
+async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg=None, batch_label=""):
     start_time = time.time()
     res = queue_prompt(wf)
     if 'error' in res:
         return False, f"❌ {res['error']}", None
 
     pid = res['prompt_id']
-    while True:
-        if time.time() - start_time > GEN_TIMEOUT:
-            try: urllib.request.urlopen(urllib.request.Request(f"http://{COMFY_SERVER}/interrupt", method='POST'))
-            except: pass
-            return False, f"⏰ Таймаут ({GEN_TIMEOUT}s)", None
-        h = get_history(pid)
-        if pid in h: break
-        await asyncio.sleep(1)
+    ws_url = f"ws://{COMFY_SERVER}/ws?clientId={CLIENT_ID}"
+    completed = False
 
+    # --- WebSocket progress tracking ---
+    try:
+        async with websockets.connect(ws_url, close_timeout=2) as ws:
+            last_update = 0
+            while True:
+                if time.time() - start_time > GEN_TIMEOUT:
+                    try: urllib.request.urlopen(urllib.request.Request(f"http://{COMFY_SERVER}/interrupt", method='POST'))
+                    except: pass
+                    return False, f"⏰ Таймаут ({GEN_TIMEOUT}s)", None
+
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=5)
+                except asyncio.TimeoutError:
+                    # Проверим history на случай пропущенного события
+                    h = get_history(pid)
+                    if pid in h:
+                        completed = True
+                        break
+                    continue
+
+                try:
+                    msg = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+                msg_type = msg.get("type", "")
+
+                if msg_type == "progress" and msg.get("data", {}).get("prompt_id") == pid:
+                    step = msg["data"].get("value", 0)
+                    max_steps = msg["data"].get("max", 1)
+                    pct = int(step / max_steps * 100) if max_steps > 0 else 0
+                    now = time.time()
+                    if status_msg and (now - last_update >= 2 or step == max_steps):
+                        try:
+                            progress_text = f"🎬 {batch_label} | {step}/{max_steps} ({pct}%)" if batch_label else f"🎬 {step}/{max_steps} ({pct}%)"
+                            await status_msg.edit_text(progress_text, reply_markup=stop_kb())
+                            last_update = now
+                        except: pass
+
+                elif msg_type == "executed" and msg.get("data", {}).get("prompt_id") == pid:
+                    completed = True
+                    break
+
+                elif msg_type == "execution_error" and msg.get("data", {}).get("prompt_id") == pid:
+                    err_msg = msg.get("data", {}).get("exception_message", "Execution error")
+                    return False, f"❌ {err_msg}", None
+
+    except Exception:
+        # Fallback: polling если WebSocket недоступен
+        while True:
+            if time.time() - start_time > GEN_TIMEOUT:
+                try: urllib.request.urlopen(urllib.request.Request(f"http://{COMFY_SERVER}/interrupt", method='POST'))
+                except: pass
+                return False, f"⏰ Таймаут ({GEN_TIMEOUT}s)", None
+            h = get_history(pid)
+            if pid in h:
+                completed = True
+                break
+            await asyncio.sleep(1)
+
+    if not completed:
+        # Финальная проверка через history
+        for _ in range(5):
+            h = get_history(pid)
+            if pid in h:
+                completed = True
+                break
+            await asyncio.sleep(1)
+
+    if not completed:
+        return False, "❌ Генерация не завершилась", None
+
+    h = get_history(pid)
     out = h[pid]['outputs']
     found = False
     duration = time.time() - start_time
@@ -467,6 +570,11 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None):
                 m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
                 found = True
+                # 💾 Сохраняем в историю
+                d = get_user_data(uid)
+                d.setdefault('history', []).append({"filename": img['filename'], "subfolder": img['subfolder'], "type": img['type']})
+                if len(d['history']) > 20: d['history'] = d['history'][-20:]
+                save_user_data()
     
     return found, None, used_seed
 
@@ -475,6 +583,11 @@ def stop_kb():
 
 async def run_flux_batch(context, uid, data, batch, status_msg):
     cancel_flags[uid] = False
+    healthy, health_err = check_comfy_health()
+    if not healthy:
+        try: await status_msg.edit_text(health_err)
+        except: pass
+        return
     user_prompt = data.get("pos")
     for i in range(batch):
         if cancel_flags.get(uid):
@@ -483,11 +596,12 @@ async def run_flux_batch(context, uid, data, batch, status_msg):
             break
         try: await status_msg.edit_text(f"🎬 Flux {i+1}/{batch}...", reply_markup=stop_kb())
         except: pass
+        d = get_user_data(uid)
         with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f:
             wf = json.load(f)
-        wf = apply_flux_settings(wf, data)
+        wf = apply_flux_settings(wf, data, dataset_name=d['dataset_name'], batch_idx=i+1)
         try:
-            found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}", user_prompt=user_prompt)
+            found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}", user_prompt=user_prompt, status_msg=status_msg, batch_label=f"Flux {i+1}/{batch}")
             if err:
                 m = await context.bot.send_message(uid, err, reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
@@ -508,6 +622,12 @@ async def run_legacy_batch(context, uid, update):
 
     status = await update.message.reply_text(f"🚀 {batch}x {cfg['name']}...", reply_markup=stop_kb())
     track_message(uid, status.message_id)
+
+    healthy, health_err = check_comfy_health()
+    if not healthy:
+        try: await status.edit_text(health_err)
+        except: pass
+        return
 
     files = get_available_loras()
     for i in range(batch):
@@ -542,10 +662,10 @@ async def run_legacy_batch(context, uid, update):
             wf[tid]["inputs"][k] = prompt_txt
 
         if "211" in wf and "inputs" in wf["211"]:
-            wf["211"]["inputs"]["value"] = d['dataset_name']
+            wf["211"]["inputs"]["value"] = f"{d['dataset_name']}_{i+1:03d}"
 
         try:
-            found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}")
+            found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}", status_msg=status, batch_label=f"{cfg['name']} {i+1}/{batch}")
             if err:
                 m = await context.bot.send_message(uid, err, reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)

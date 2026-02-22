@@ -1,0 +1,7 @@
+{
+  "site_package_search_strategy": "pep561",
+  "search_path": [
+    "C:\\Program Files\\Python311\\Lib\\site-packages"
+  ],
+  "source_directories": ["."]
+}

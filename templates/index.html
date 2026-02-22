@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -7,106 +8,536 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --bg: #1a1a2e; --node: #16213e; --node-border: #0f3460;
-            --accent: #e94560; --accent-glow: rgba(233,69,96,0.3);
-            --text: #eee; --dim: #8899aa; --input-bg: #0a0a1a;
-            --border: #1a3a5c; --success: #00d68f; --warn: #f0a030;
-            --cam-rot: #e94560; --cam-ang: #0fbcf9; --cam-dist: #00d68f;
+            --bg: #1a1a2e;
+            --node: #16213e;
+            --node-border: #0f3460;
+            --accent: #e94560;
+            --accent-glow: rgba(233, 69, 96, 0.3);
+            --text: #eee;
+            --dim: #8899aa;
+            --input-bg: #0a0a1a;
+            --border: #1a3a5c;
+            --success: #00d68f;
+            --warn: #f0a030;
+            --cam-rot: #e94560;
+            --cam-ang: #0fbcf9;
+            --cam-dist: #00d68f;
         }
 
         [data-theme="comfy"] {
-            --bg: #202020; --node: #2a2a2a; --node-border: #3a3a3a;
-            --accent: #4e9eff; --accent-glow: rgba(78,158,255,0.3);
-            --text: #ddd; --dim: #888; --input-bg: #1a1a1a;
-            --border: #444; --success: #6eff6e; --warn: #ffaa33;
-            --cam-rot: #ff6b6b; --cam-ang: #4ecdc4; --cam-dist: #ffe66d;
+            --bg: #202020;
+            --node: #2a2a2a;
+            --node-border: #3a3a3a;
+            --accent: #4e9eff;
+            --accent-glow: rgba(78, 158, 255, 0.3);
+            --text: #ddd;
+            --dim: #888;
+            --input-bg: #1a1a1a;
+            --border: #444;
+            --success: #6eff6e;
+            --warn: #ffaa33;
+            --cam-rot: #ff6b6b;
+            --cam-ang: #4ecdc4;
+            --cam-dist: #ffe66d;
         }
 
         [data-theme="midnight"] {
-            --bg: #0d1117; --node: #161b22; --node-border: #21262d;
-            --accent: #58a6ff; --accent-glow: rgba(88,166,255,0.2);
-            --text: #c9d1d9; --dim: #6e7681; --input-bg: #010409;
-            --border: #30363d; --success: #3fb950; --warn: #d29922;
-            --cam-rot: #f778ba; --cam-ang: #58a6ff; --cam-dist: #3fb950;
+            --bg: #0d1117;
+            --node: #161b22;
+            --node-border: #21262d;
+            --accent: #58a6ff;
+            --accent-glow: rgba(88, 166, 255, 0.2);
+            --text: #c9d1d9;
+            --dim: #6e7681;
+            --input-bg: #010409;
+            --border: #30363d;
+            --success: #3fb950;
+            --warn: #d29922;
+            --cam-rot: #f778ba;
+            --cam-ang: #58a6ff;
+            --cam-dist: #3fb950;
         }
 
         [data-theme="warm"] {
-            --bg: #1c1410; --node: #2a1f18; --node-border: #3d2e22;
-            --accent: #e08900; --accent-glow: rgba(224,137,0,0.3);
-            --text: #e0d5c8; --dim: #8a7a6a; --input-bg: #110d08;
-            --border: #4a3828; --success: #7bc67e; --warn: #e0a030;
-            --cam-rot: #e06050; --cam-ang: #50a0d0; --cam-dist: #70c070;
+            --bg: #1c1410;
+            --node: #2a1f18;
+            --node-border: #3d2e22;
+            --accent: #e08900;
+            --accent-glow: rgba(224, 137, 0, 0.3);
+            --text: #e0d5c8;
+            --dim: #8a7a6a;
+            --input-bg: #110d08;
+            --border: #4a3828;
+            --success: #7bc67e;
+            --warn: #e0a030;
+            --cam-rot: #e06050;
+            --cam-ang: #50a0d0;
+            --cam-dist: #70c070;
         }
 
-        * { box-sizing: border-box; }
-        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; padding: 8px; padding-bottom: 90px; margin: 0; transition: background 0.3s, color 0.3s; }
+        * {
+            box-sizing: border-box;
+        }
 
-        .node { background: var(--node); border: 1px solid var(--node-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; position: relative; overflow: hidden; transition: background 0.3s, border-color 0.3s; }
-        .node::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent); border-radius: 10px 10px 0 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            padding: 8px;
+            padding-bottom: 90px;
+            margin: 0;
+            transition: background 0.3s, color 0.3s;
+        }
 
-        .head { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .node {
+            background: var(--node);
+            border: 1px solid var(--node-border);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            position: relative;
+            overflow: hidden;
+            transition: background 0.3s, border-color 0.3s;
+        }
 
-        select, input[type=text], textarea { width: 100%; background: var(--input-bg); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; font-size: 13px; margin-bottom: 6px; outline: none; transition: border-color 0.2s; }
-        select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+        .node::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--accent);
+            border-radius: 10px 10px 0 0;
+        }
 
-        .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-        .col { display: flex; flex-direction: column; flex: 1; }
-        .label { font-size: 10px; color: var(--dim); margin-bottom: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+        .head {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-        input[type=range] { -webkit-appearance: none; flex: 1; height: 6px; border-radius: 3px; background: var(--border); outline: none; margin: 0; }
-        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--node); box-shadow: 0 0 6px var(--accent-glow); }
-        .badge { color: var(--accent); font-weight: 700; font-size: 12px; min-width: 28px; text-align: right; font-family: monospace; }
-        .slider-label { font-size: 11px; color: var(--dim); min-width: 50px; }
+        select,
+        input[type=text],
+        textarea {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 6px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
 
-        .cam-block { background: var(--input-bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 6px; position: relative; }
-        .cam-block::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px; border-radius: 8px 0 0 8px; }
-        .cam-block.rot::before { background: var(--cam-rot); }
-        .cam-block.ang::before { background: var(--cam-ang); }
-        .cam-block.dist::before { background: var(--cam-dist); }
-        .cam-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; padding-left: 6px; }
-        .cam-block.rot .cam-title { color: var(--cam-rot); }
-        .cam-block.ang .cam-title { color: var(--cam-ang); }
-        .cam-block.dist .cam-title { color: var(--cam-dist); }
+        select:focus,
+        input:focus,
+        textarea:focus {
+            border-color: var(--accent);
+        }
 
-        .grid { display: grid; gap: 4px; padding-left: 4px; }
-        .grid-6 { grid-template-columns: repeat(3, 1fr); }
-        .grid-5 { grid-template-columns: repeat(3, 1fr); }
-        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
 
-        .btn { background: var(--node); border: 1px solid var(--border); padding: 7px 4px; text-align: center; border-radius: 5px; font-size: 10px; font-weight: 600; cursor: pointer; color: var(--dim); transition: all 0.15s; user-select: none; }
-        .btn:active { transform: scale(0.95); }
-        .cam-block.rot .btn.active { background: var(--cam-rot); color: #fff; border-color: var(--cam-rot); box-shadow: 0 0 8px rgba(233,69,96,0.4); }
-        .cam-block.ang .btn.active { background: var(--cam-ang); color: #000; border-color: var(--cam-ang); box-shadow: 0 0 8px rgba(15,188,249,0.4); }
-        .cam-block.dist .btn.active { background: var(--cam-dist); color: #000; border-color: var(--cam-dist); box-shadow: 0 0 8px rgba(0,214,143,0.4); }
+        .col {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
 
-        .ref-card { background: var(--input-bg); border: 1px solid var(--border); padding: 6px 8px; border-radius: 6px; margin-bottom: 4px; }
-        .ref-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-        .tgl { background: var(--node); color: var(--dim); padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); transition: all 0.15s; user-select: none; }
-        .tgl.on { background: var(--accent); color: #fff; border-color: var(--accent); }
-        .rot-sel { width: auto; padding: 2px 4px; height: 24px; font-size: 10px; background: var(--node); margin: 0; border: 1px solid var(--border); color: var(--text); border-radius: 4px; }
+        .label {
+            font-size: 10px;
+            color: var(--dim);
+            margin-bottom: 3px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
 
-        .lora-row { display: flex; align-items: center; gap: 4px; background: var(--input-bg); padding: 4px 6px; border-radius: 5px; margin-bottom: 4px; border: 1px solid var(--border); }
-        .lora-row select { margin: 0; border: none; font-size: 12px; background: transparent; flex: 1; }
-        .lora-row input { width: 44px; border: none; text-align: center; background: transparent; color: var(--accent); font-weight: 700; font-family: monospace; }
-        .lora-del { color: #d32f2f; cursor: pointer; padding: 0 6px; font-weight: bold; font-size: 14px; }
-        .lora-del:hover { color: #ff5555; }
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--border);
+            outline: none;
+            margin: 0;
+        }
 
-        .add-btn { background: var(--node); border: 1px dashed var(--border); padding: 8px; text-align: center; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; color: var(--dim); transition: all 0.2s; margin-top: 6px; }
-        .add-btn:hover { border-color: var(--accent); color: var(--accent); }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            border: 2px solid var(--node);
+            box-shadow: 0 0 6px var(--accent-glow);
+        }
 
-        #send { position: fixed; bottom: 10px; left: 10px; right: 10px; padding: 14px; background: var(--accent); border: none; border-radius: 8px; font-weight: 800; font-size: 15px; letter-spacing: 1px; width: calc(100% - 20px); color: #fff; cursor: pointer; box-shadow: 0 4px 16px var(--accent-glow); z-index: 100; text-transform: uppercase; transition: background 0.2s; }
-        #send:active { transform: scale(0.98); }
+        .badge {
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 12px;
+            min-width: 28px;
+            text-align: right;
+            font-family: monospace;
+        }
 
-        .theme-bar { display: flex; gap: 4px; margin-bottom: 8px; }
-        .theme-dot { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s, transform 0.15s; }
-        .theme-dot:hover { transform: scale(1.15); }
-        .theme-dot.active { border-color: #fff; }
-        .theme-dot[data-t="default"] { background: linear-gradient(135deg, #1a1a2e, #e94560); }
-        .theme-dot[data-t="comfy"] { background: linear-gradient(135deg, #202020, #4e9eff); }
-        .theme-dot[data-t="midnight"] { background: linear-gradient(135deg, #0d1117, #58a6ff); }
-        .theme-dot[data-t="warm"] { background: linear-gradient(135deg, #1c1410, #e08900); }
+        .slider-label {
+            font-size: 11px;
+            color: var(--dim);
+            min-width: 50px;
+        }
+
+        .cam-block {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
+            margin-bottom: 6px;
+            position: relative;
+        }
+
+        .cam-block::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 3px;
+            border-radius: 8px 0 0 8px;
+        }
+
+        .cam-block.rot::before {
+            background: var(--cam-rot);
+        }
+
+        .cam-block.ang::before {
+            background: var(--cam-ang);
+        }
+
+        .cam-block.dist::before {
+            background: var(--cam-dist);
+        }
+
+        .cam-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+            padding-left: 6px;
+        }
+
+        .cam-block.rot .cam-title {
+            color: var(--cam-rot);
+        }
+
+        .cam-block.ang .cam-title {
+            color: var(--cam-ang);
+        }
+
+        .cam-block.dist .cam-title {
+            color: var(--cam-dist);
+        }
+
+        .grid {
+            display: grid;
+            gap: 4px;
+            padding-left: 4px;
+        }
+
+        .grid-6 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .grid-5 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .grid-4 {
+            grid-template-columns: repeat(4, 1fr);
+        }
+
+        .btn {
+            background: var(--node);
+            border: 1px solid var(--border);
+            padding: 7px 4px;
+            text-align: center;
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            color: var(--dim);
+            transition: all 0.15s;
+            user-select: none;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .cam-block.rot .btn.active {
+            background: var(--cam-rot);
+            color: #fff;
+            border-color: var(--cam-rot);
+            box-shadow: 0 0 8px rgba(233, 69, 96, 0.4);
+        }
+
+        .cam-block.ang .btn.active {
+            background: var(--cam-ang);
+            color: #000;
+            border-color: var(--cam-ang);
+            box-shadow: 0 0 8px rgba(15, 188, 249, 0.4);
+        }
+
+        .cam-block.dist .btn.active {
+            background: var(--cam-dist);
+            color: #000;
+            border-color: var(--cam-dist);
+            box-shadow: 0 0 8px rgba(0, 214, 143, 0.4);
+        }
+
+        .ref-card {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            padding: 6px 8px;
+            border-radius: 6px;
+            margin-bottom: 4px;
+        }
+
+        .ref-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .ref-body {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .ref-body select {
+            flex: 1;
+        }
+
+        .ref-preview {
+            width: 48px;
+            height: 48px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            display: none;
+        }
+
+        .tgl {
+            background: var(--node);
+            color: var(--dim);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            transition: all 0.15s;
+            user-select: none;
+        }
+
+        .tgl.on {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .rot-sel {
+            width: auto;
+            padding: 2px 4px;
+            height: 24px;
+            font-size: 10px;
+            background: var(--node);
+            margin: 0;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 4px;
+        }
+
+        .preset-bar {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .preset-bar select {
+            flex: 1;
+            margin: 0;
+        }
+
+        .preset-btn {
+            background: var(--node);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.15s;
+        }
+
+        .preset-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .preset-btn:active {
+            transform: scale(0.95);
+        }
+
+        .lora-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--input-bg);
+            padding: 4px 6px;
+            border-radius: 5px;
+            margin-bottom: 4px;
+            border: 1px solid var(--border);
+        }
+
+        .lora-row select {
+            margin: 0;
+            border: none;
+            font-size: 12px;
+            background: transparent;
+            flex: 1;
+        }
+
+        .lora-row input {
+            width: 44px;
+            border: none;
+            text-align: center;
+            background: transparent;
+            color: var(--accent);
+            font-weight: 700;
+            font-family: monospace;
+        }
+
+        .lora-del {
+            color: #d32f2f;
+            cursor: pointer;
+            padding: 0 6px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .lora-del:hover {
+            color: #ff5555;
+        }
+
+        .add-btn {
+            background: var(--node);
+            border: 1px dashed var(--border);
+            padding: 8px;
+            text-align: center;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            color: var(--dim);
+            transition: all 0.2s;
+            margin-top: 6px;
+        }
+
+        .add-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        #send {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            padding: 14px;
+            background: var(--accent);
+            border: none;
+            border-radius: 8px;
+            font-weight: 800;
+            font-size: 15px;
+            letter-spacing: 1px;
+            width: calc(100% - 20px);
+            color: #fff;
+            cursor: pointer;
+            box-shadow: 0 4px 16px var(--accent-glow);
+            z-index: 100;
+            text-transform: uppercase;
+            transition: background 0.2s;
+        }
+
+        #send:active {
+            transform: scale(0.98);
+        }
+
+        .theme-bar {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 8px;
+        }
+
+        .theme-dot {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.2s, transform 0.15s;
+        }
+
+        .theme-dot:hover {
+            transform: scale(1.15);
+        }
+
+        .theme-dot.active {
+            border-color: #fff;
+        }
+
+        .theme-dot[data-t="default"] {
+            background: linear-gradient(135deg, #1a1a2e, #e94560);
+        }
+
+        .theme-dot[data-t="comfy"] {
+            background: linear-gradient(135deg, #202020, #4e9eff);
+        }
+
+        .theme-dot[data-t="midnight"] {
+            background: linear-gradient(135deg, #0d1117, #58a6ff);
+        }
+
+        .theme-dot[data-t="warm"] {
+            background: linear-gradient(135deg, #1c1410, #e08900);
+        }
     </style>
 </head>
+
 <body data-theme="default">
 
     <div class="theme-bar">
@@ -120,11 +551,21 @@
         <div class="head">⚙️ Model & Settings <span id="status" style="color:var(--dim)">Loading...</span></div>
 
         <div class="label">Diffusion Model</div>
-        <select id="ckpt"><option value="">Waiting for server...</option></select>
+        <select id="ckpt">
+            <option value="">Waiting for server...</option>
+        </select>
 
         <div class="row">
-            <div class="col"><div class="label">CLIP</div><select id="clip"><option value="">Loading...</option></select></div>
-            <div class="col"><div class="label">VAE</div><select id="vae"><option value="">Loading...</option></select></div>
+            <div class="col">
+                <div class="label">CLIP</div><select id="clip">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div class="col">
+                <div class="label">VAE</div><select id="vae">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
         </div>
 
         <div class="row">
@@ -156,8 +597,10 @@
             <option value="9:16 (Portrait)">9:16 Story</option>
         </select>
 
-        <div class="row"><span class="slider-label">Steps</span><input type="range" id="steps" min="4" max="25" value="8" oninput="upd('v_st',this.value)"><span id="v_st" class="badge">8</span></div>
-        <div class="row"><span class="slider-label">CFG</span><input type="range" id="cfg" min="1.0" max="4.0" step="0.1" value="1.0" oninput="upd('v_cfg',this.value)"><span id="v_cfg" class="badge">1.0</span></div>
+        <div class="row"><span class="slider-label">Steps</span><input type="range" id="steps" min="4" max="25"
+                value="8" oninput="upd('v_st',this.value)"><span id="v_st" class="badge">8</span></div>
+        <div class="row"><span class="slider-label">CFG</span><input type="range" id="cfg" min="1.0" max="4.0"
+                step="0.1" value="1.0" oninput="upd('v_cfg',this.value)"><span id="v_cfg" class="badge">1.0</span></div>
         <input type="text" id="seed" placeholder="Seed (-1 = Random)" value="-1">
     </div>
 
@@ -166,7 +609,8 @@
         <div id="refs"></div>
         <div class="row" style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px">
             <span class="slider-label">Ref Scale</span>
-            <input type="range" id="rscale" min="0" max="1.5" step="0.05" value="0.75" oninput="upd('v_rs',this.value)"><span id="v_rs" class="badge">0.75</span>
+            <input type="range" id="rscale" min="0" max="1.5" step="0.05" value="0.75"
+                oninput="upd('v_rs',this.value)"><span id="v_rs" class="badge">0.75</span>
         </div>
     </div>
 
@@ -218,8 +662,11 @@
 
     <div class="node">
         <div class="head">🖌 Inpaint</div>
-        <div class="row"><span class="slider-label">Context</span><input type="range" id="ctx" min="1" max="2" step="0.1" value="1.2" oninput="upd('v_ctx',this.value)"><span id="v_ctx" class="badge">1.2</span></div>
-        <div class="row"><span class="slider-label">Rescale</span><input type="range" id="resc" min="1" max="2" step="0.1" value="1.0" oninput="upd('v_resc',this.value)"><span id="v_resc" class="badge">1.0</span></div>
+        <div class="row"><span class="slider-label">Context</span><input type="range" id="ctx" min="1" max="2"
+                step="0.1" value="1.2" oninput="upd('v_ctx',this.value)"><span id="v_ctx" class="badge">1.2</span></div>
+        <div class="row"><span class="slider-label">Rescale</span><input type="range" id="resc" min="1" max="2"
+                step="0.1" value="1.0" oninput="upd('v_resc',this.value)"><span id="v_resc" class="badge">1.0</span>
+        </div>
     </div>
 
     <div class="node">
@@ -228,93 +675,105 @@
         <div class="add-btn" onclick="addLora()">+ Add LoRA</div>
     </div>
 
+    <div class="node">
+        <div class="head">💾 Presets</div>
+        <div class="preset-bar">
+            <select id="preset_list">
+                <option value="">— Нет пресетов —</option>
+            </select>
+            <div class="preset-btn" onclick="loadPreset()">📂</div>
+            <div class="preset-btn" onclick="savePreset()">💾</div>
+            <div class="preset-btn" onclick="deletePreset()">🗑</div>
+        </div>
+    </div>
+
     <button id="send" onclick="send()">⚡ Queue Flux</button>
 
     <script>
         let tg = window.Telegram.WebApp; tg.expand();
-        let availLoras=[], availImgs=[];
+        let availLoras = [], availImgs = [], currentUid = '';
 
-        function setTheme(el){
+        function setTheme(el) {
             document.body.setAttribute('data-theme', el.dataset.t);
-            document.querySelectorAll('.theme-dot').forEach(d=>d.classList.remove('active'));
+            document.querySelectorAll('.theme-dot').forEach(d => d.classList.remove('active'));
             el.classList.add('active');
-            try { localStorage.setItem('ng_theme', el.dataset.t); } catch(e){}
+            try { localStorage.setItem('ng_theme', el.dataset.t); } catch (e) { }
         }
-        try { let t = localStorage.getItem('ng_theme'); if(t) { let el = document.querySelector(`.theme-dot[data-t="${t}"]`); if(el) setTheme(el); } } catch(e){}
+        try { let t = localStorage.getItem('ng_theme'); if (t) { let el = document.querySelector(`.theme-dot[data-t="${t}"]`); if (el) setTheme(el); } } catch (e) { }
 
-        function upd(id,v){ document.getElementById(id).innerText=v }
-        function set(el,type,val){
-            document.getElementById(type).value=val;
-            document.querySelectorAll(`#g_${type} .btn`).forEach(b=>b.classList.remove('active'));
+        function upd(id, v) { document.getElementById(id).innerText = v }
+        function set(el, type, val) {
+            document.getElementById(type).value = val;
+            document.querySelectorAll(`#g_${type} .btn`).forEach(b => b.classList.remove('active'));
             el.classList.add('active');
         }
 
-        function getInitData(){
+        function getInitData() {
             try {
                 let p = new URLSearchParams(window.location.search);
                 let raw = p.get('init');
-                if(!raw) return null;
-                let b64 = raw.replace(/-/g,'+').replace(/_/g,'/');
-                while(b64.length % 4) b64 += '=';
+                if (!raw) return null;
+                let b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
+                while (b64.length % 4) b64 += '=';
                 return JSON.parse(atob(b64));
-            } catch(e){ return null; }
+            } catch (e) { return null; }
         }
 
-        function restoreSettings(d){
-            if(!d) return;
-            ['ckpt','clip','vae','dtype','sage','res','seed'].forEach(k=>{
+        function restoreSettings(d) {
+            if (!d) return;
+            ['ckpt', 'clip', 'vae', 'dtype', 'sage', 'res', 'seed'].forEach(k => {
                 let el = document.getElementById(k);
-                if(el && d[k] !== undefined) el.value = d[k];
+                if (el && d[k] !== undefined) el.value = d[k];
             });
-            if(d.pos !== undefined) document.getElementById('pos').value = d.pos;
-            if(d.neg !== undefined) document.getElementById('neg').value = d.neg;
+            if (d.pos !== undefined) document.getElementById('pos').value = d.pos;
+            if (d.neg !== undefined) document.getElementById('neg').value = d.neg;
 
-            let rm = {steps:'v_st', cfg:'v_cfg', ctx:'v_ctx', resc:'v_resc', rscale:'v_rs'};
-            for(let [id, badge] of Object.entries(rm)){
-                if(d[id] !== undefined){
+            let rm = { steps: 'v_st', cfg: 'v_cfg', ctx: 'v_ctx', resc: 'v_resc', rscale: 'v_rs' };
+            for (let [id, badge] of Object.entries(rm)) {
+                if (d[id] !== undefined) {
                     let el = document.getElementById(id);
-                    if(el){ el.value = d[id]; upd(badge, d[id]); }
+                    if (el) { el.value = d[id]; upd(badge, d[id]); }
                 }
             }
 
-            ['rot','ang','dist'].forEach(type=>{
-                if(d[type] !== undefined){
+            ['rot', 'ang', 'dist'].forEach(type => {
+                if (d[type] !== undefined) {
                     let val = parseInt(d[type]);
                     document.getElementById(type).value = val;
-                    document.querySelectorAll(`#g_${type} .btn`).forEach(b=>{
+                    document.querySelectorAll(`#g_${type} .btn`).forEach(b => {
                         b.classList.remove('active');
-                        if((b.getAttribute('onclick')||'').includes(`'${type}',${val})`)) b.classList.add('active');
+                        if ((b.getAttribute('onclick') || '').includes(`'${type}',${val})`)) b.classList.add('active');
                     });
                 }
             });
 
-            if(d.loras && d.loras.length){
-                d.loras.forEach(l=>{
+            if (d.loras && d.loras.length) {
+                d.loras.forEach(l => {
                     addLora();
                     let sels = document.querySelectorAll('.l-sel');
                     let ws = document.querySelectorAll('.l-w');
-                    sels[sels.length-1].value = l.name;
-                    ws[ws.length-1].value = l.weight;
+                    sels[sels.length - 1].value = l.name;
+                    ws[ws.length - 1].value = l.weight;
                 });
             }
 
-            if(d.refs && d.refs.length){
-                d.refs.forEach(r=>{
+            if (d.refs && d.refs.length) {
+                d.refs.forEach(r => {
                     let el = document.getElementById(`im_${r.idx}`);
-                    if(el) el.value = r.image;
-                    if(r.active){ let a = document.getElementById(`act_${r.idx}`); if(a) a.classList.add('on'); }
-                    if(r.flip){ let f = document.getElementById(`flp_${r.idx}`); if(f) f.classList.add('on'); }
+                    if (el) el.value = r.image;
+                    if (r.active) { let a = document.getElementById(`act_${r.idx}`); if (a) a.classList.add('on'); }
+                    if (r.flip) { let f = document.getElementById(`flp_${r.idx}`); if (f) f.classList.add('on'); }
                     let rt = document.getElementById(`rt_${r.idx}`);
-                    if(rt && r.rot) rt.value = r.rot;
+                    if (rt && r.rot) rt.value = r.rot;
                 });
             }
         }
 
-        function renderRefs(){
+        function renderRefs() {
             let h = "";
-            for(let i=1; i<=6; i++){
-                let label = i===1 ? "Image 1 (Main)" : `Image ${i}`;
-                let opts = `<option value="">Select...</option>` + availImgs.map(x=>`<option value="${x}">${x}</option>`).join('');
+            for (let i = 1; i <= 6; i++) {
+                let label = i === 1 ? "Image 1 (Main)" : `Image ${i}`;
+                let opts = `<option value="">Select...</option>` + availImgs.map(x => `<option value="${x}">${x}</option>`).join('');
                 h += `
                 <div class="ref-card">
                     <div class="ref-top">
@@ -328,36 +787,39 @@
                             </select>
                         </div>
                     </div>
-                    <select id="im_${i}">${opts}</select>
+                    <div class="ref-body">
+                        <img class="ref-preview" id="prev_${i}">
+                        <select id="im_${i}" onchange="showRefPreview(${i})">${opts}</select>
+                    </div>
                 </div>`;
             }
             document.getElementById('refs').innerHTML = h;
         }
 
-        function addLora(){
+        function addLora() {
             let d = document.createElement('div');
             d.innerHTML = `<div class="lora-row">
-                <select class="l-sel"><option value="">Select LoRA...</option>${availLoras.map(x=>`<option>${x}</option>`)}</select>
+                <select class="l-sel"><option value="">Select LoRA...</option>${availLoras.map(x => `<option>${x}</option>`)}</select>
                 <input type="number" class="l-w" value="0.8" step="0.1">
                 <span class="lora-del" onclick="this.parentElement.parentElement.remove()">✕</span>
             </div>`;
             document.getElementById('loras').appendChild(d);
         }
 
-        async function init(){
+        async function init() {
             try {
                 let [ckpt, clip, vae, loras, imgs] = await Promise.all([
-                    fetch('/api/checkpoints').then(r=>r.json()),
-                    fetch('/api/clip').then(r=>r.json()),
-                    fetch('/api/vae').then(r=>r.json()),
-                    fetch('/api/loras').then(r=>r.json()),
-                    fetch('/api/images').then(r=>r.json())
+                    fetch('/api/checkpoints').then(r => r.json()),
+                    fetch('/api/clip').then(r => r.json()),
+                    fetch('/api/vae').then(r => r.json()),
+                    fetch('/api/loras').then(r => r.json()),
+                    fetch('/api/images').then(r => r.json())
                 ]);
 
                 let fill = (id, list, def) => {
-                    let s = document.getElementById(id); s.innerHTML="";
-                    if(def) s.add(new Option(def, ""));
-                    if(list && list.length) list.forEach(x=>s.add(new Option(x,x)));
+                    let s = document.getElementById(id); s.innerHTML = "";
+                    if (def) s.add(new Option(def, ""));
+                    if (list && list.length) list.forEach(x => s.add(new Option(x, x)));
                     else s.add(new Option("No files found", ""));
                 };
 
@@ -372,20 +834,111 @@
                 document.getElementById('status').innerText = "Ready";
                 document.getElementById('status').style.color = "var(--success)";
                 let saved = getInitData();
-                if(saved){
+                if (saved) {
+                    if (saved._uid) { currentUid = saved._uid; delete saved._uid; }
                     restoreSettings(saved);
                     document.getElementById('status').innerText = "Restored ✓";
+                    await loadPresets();
                 }
-            } catch(e) {
+            } catch (e) {
                 document.getElementById('status').innerText = "API Error";
                 document.getElementById('status').style.color = "var(--cam-rot)";
             }
         }
+        function showRefPreview(idx) {
+            let sel = document.getElementById(`im_${idx}`);
+            let img = document.getElementById(`prev_${idx}`);
+            if (sel.value) {
+                img.src = `/api/preview?file=${encodeURIComponent(sel.value)}`;
+                img.style.display = 'block';
+            } else {
+                img.style.display = 'none';
+                img.src = '';
+            }
+        }
+
+        async function loadPresets() {
+            if (!currentUid) return;
+            try {
+                let r = await fetch(`/api/presets?uid=${currentUid}`);
+                let data = await r.json();
+                let sel = document.getElementById('preset_list');
+                sel.innerHTML = '<option value="">— Выбери пресет —</option>';
+                for (let name of Object.keys(data.presets || {})) {
+                    sel.add(new Option(name, name));
+                }
+            } catch (e) { }
+        }
+
+        function collectCurrentSettings() {
+            let d = {};
+            ['ckpt', 'clip', 'vae', 'dtype', 'sage', 'res', 'seed'].forEach(k => d[k] = document.getElementById(k).value);
+            ['steps', 'cfg', 'ctx', 'resc', 'rscale'].forEach(k => d[k] = document.getElementById(k).value);
+            ['rot', 'ang', 'dist'].forEach(k => d[k] = document.getElementById(k).value);
+            d.pos = document.getElementById('pos').value;
+            d.neg = document.getElementById('neg').value;
+            d.loras = [];
+            document.querySelectorAll('.l-sel').forEach((s, i) => {
+                if (s.value) d.loras.push({ name: s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value) });
+            });
+            d.refs = [];
+            for (let i = 1; i <= 6; i++) {
+                let im = document.getElementById(`im_${i}`).value;
+                if (im) d.refs.push({
+                    idx: i, image: im,
+                    active: document.getElementById(`act_${i}`).classList.contains('on'),
+                    flip: document.getElementById(`flp_${i}`).classList.contains('on'),
+                    rot: document.getElementById(`rt_${i}`).value
+                });
+            }
+            return d;
+        }
+
+        async function savePreset() {
+            if (!currentUid) { alert('UID not available'); return; }
+            let name = prompt('Имя пресета:');
+            if (!name) return;
+            let settings = collectCurrentSettings();
+            try {
+                let r = await fetch('/api/presets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid: currentUid, name: name, data: settings })
+                });
+                let data = await r.json();
+                if (data.ok) { await loadPresets(); document.getElementById('preset_list').value = name; }
+            } catch (e) { alert('Ошибка сохранения'); }
+        }
+
+        function loadPreset() {
+            let name = document.getElementById('preset_list').value;
+            if (!name || !currentUid) return;
+            fetch(`/api/presets?uid=${currentUid}`)
+                .then(r => r.json())
+                .then(data => {
+                    let preset = (data.presets || {})[name];
+                    if (preset) {
+                        document.getElementById('loras').innerHTML = '';
+                        restoreSettings(preset);
+                    }
+                });
+        }
+
+        async function deletePreset() {
+            let name = document.getElementById('preset_list').value;
+            if (!name || !currentUid) return;
+            if (!confirm(`Удалить пресет "${name}"?`)) return;
+            try {
+                await fetch(`/api/presets?uid=${currentUid}&name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+                await loadPresets();
+            } catch (e) { }
+        }
+
         init();
 
-        function send(){
+        function send() {
             let ckpt = document.getElementById('ckpt').value;
-            if(!ckpt || ckpt === "") { alert("Select a Checkpoint!"); return; }
+            if (!ckpt || ckpt === "") { alert("Select a Checkpoint!"); return; }
 
             let d = {
                 ckpt: ckpt,
@@ -408,14 +961,14 @@
                 loras: [], refs: []
             };
 
-            document.querySelectorAll('.l-sel').forEach((s,i)=>{
-                if(s.value && s.value !== "")
-                    d.loras.push({name:s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value)});
+            document.querySelectorAll('.l-sel').forEach((s, i) => {
+                if (s.value && s.value !== "")
+                    d.loras.push({ name: s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value) });
             });
 
-            for(let i=1; i<=6; i++){
+            for (let i = 1; i <= 6; i++) {
                 let im = document.getElementById(`im_${i}`).value;
-                if(im && im !== "")
+                if (im && im !== "")
                     d.refs.push({
                         idx: i, image: im,
                         active: document.getElementById(`act_${i}`).classList.contains('on'),
@@ -427,4 +980,5 @@
         }
     </script>
 </body>
+
 </html>
