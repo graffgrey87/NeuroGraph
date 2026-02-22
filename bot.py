@@ -255,7 +255,8 @@ def get_links_kb():
     base = f"https://{RUNPOD_ID}"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🎨 ComfyUI", url=f"{base}-{COMFY_PORT}.proxy.runpod.net/")],
-        [InlineKeyboardButton("🖼 Gallery", url=f"{base}-8083.proxy.runpod.net/"), InlineKeyboardButton("🧠 CivitAI", url=f"{base}-8082.proxy.runpod.net/")],
+        [InlineKeyboardButton("� Files", url=f"{base}-8081.proxy.runpod.net/"), InlineKeyboardButton("�🖼 Gallery", url=f"{base}-8083.proxy.runpod.net/")],
+        [InlineKeyboardButton("🧠 CivitAI", url=f"{base}-8082.proxy.runpod.net/")],
         [InlineKeyboardButton("❌ Close", callback_data="close_links")]
     ])
 
@@ -480,12 +481,14 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                 try:
                     raw = await asyncio.wait_for(ws.recv(), timeout=5)
                 except asyncio.TimeoutError:
-                    # Проверим history на случай пропущенного события
                     h = get_history(pid)
                     if pid in h:
                         completed = True
                         break
                     continue
+
+                if isinstance(raw, bytes):
+                    continue  # бинарные фреймы (preview) пропускаем
 
                 try:
                     msg = json.loads(raw)
@@ -514,7 +517,8 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                     err_msg = msg.get("data", {}).get("exception_message", "Execution error")
                     return False, f"❌ {err_msg}", None
 
-    except Exception:
+    except Exception as ws_err:
+        print(f"⚠️ WebSocket failed: {ws_err}, using polling fallback")
         # Fallback: polling если WebSocket недоступен
         while True:
             if time.time() - start_time > GEN_TIMEOUT:
@@ -525,58 +529,73 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
             if pid in h:
                 completed = True
                 break
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
 
     if not completed:
         # Финальная проверка через history
-        for _ in range(5):
+        for _ in range(10):
             h = get_history(pid)
             if pid in h:
                 completed = True
                 break
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
 
     if not completed:
         return False, "❌ Генерация не завершилась", None
 
-    h = get_history(pid)
-    out = h[pid]['outputs']
-    found = False
-    duration = time.time() - start_time
-    
-    used_seed = None
-    for nid_check in ["117", "122"]:
-        if nid_check in wf and "seed" in wf[nid_check].get("inputs", {}):
-            used_seed = wf[nid_check]["inputs"]["seed"]
-            break
+    # --- Получение результата ---
+    try:
+        h = get_history(pid)
+        if pid not in h:
+            return False, "❌ Результат не найден в history", None
+        
+        out = h[pid].get('outputs', {})
+        if not out:
+            return False, "❌ Нет outputs в результате", None
 
-    caption = f"✅ {batch_idx} | ⏱ {duration:.1f}s"
-    if used_seed is not None:
-        caption += f" | 🎲 {used_seed}"
-    if user_prompt:
-        caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
-    else:
-        for nid, dat in out.items():
-            if 'text' in dat:
-                val = dat['text']
-                txt = str(val[0] if isinstance(val, list) else val)[:800]
-                caption += f"\n\n📝 {html.escape(txt)}"
+        found = False
+        duration = time.time() - start_time
+        
+        used_seed = None
+        for nid_check in ["117", "122"]:
+            if nid_check in wf and "seed" in wf[nid_check].get("inputs", {}):
+                used_seed = wf[nid_check]["inputs"]["seed"]
                 break
 
-    for nid in out:
-        if 'images' in out[nid]:
-            for img in out[nid]['images']:
-                idata = get_view(img['filename'], img['subfolder'], img['type'])
-                m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
-                track_message(uid, m.message_id)
-                found = True
-                # 💾 Сохраняем в историю
-                d = get_user_data(uid)
-                d.setdefault('history', []).append({"filename": img['filename'], "subfolder": img['subfolder'], "type": img['type']})
-                if len(d['history']) > 20: d['history'] = d['history'][-20:]
-                save_user_data()
-    
-    return found, None, used_seed
+        caption = f"✅ {batch_idx} | ⏱ {duration:.1f}s"
+        if used_seed is not None:
+            caption += f" | 🎲 {used_seed}"
+        if user_prompt:
+            caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
+        else:
+            for nid, dat in out.items():
+                if 'text' in dat:
+                    val = dat['text']
+                    txt = str(val[0] if isinstance(val, list) else val)[:800]
+                    caption += f"\n\n📝 {html.escape(txt)}"
+                    break
+
+        for nid in out:
+            if 'images' in out[nid]:
+                for img in out[nid]['images']:
+                    try:
+                        idata = get_view(img['filename'], img['subfolder'], img['type'])
+                        m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
+                        track_message(uid, m.message_id)
+                        found = True
+                        # 💾 Сохраняем в историю
+                        d = get_user_data(uid)
+                        d.setdefault('history', []).append({"filename": img['filename'], "subfolder": img['subfolder'], "type": img['type']})
+                        if len(d['history']) > 20: d['history'] = d['history'][-20:]
+                        save_user_data()
+                    except Exception as img_err:
+                        print(f"⚠️ Failed to send image: {img_err}")
+        
+        return found, None, used_seed
+    except Exception as result_err:
+        print(f"❌ Error processing results: {result_err}")
+        traceback.print_exc()
+        return False, f"❌ Ошибка обработки: {result_err}", None
 
 def stop_kb():
     return InlineKeyboardMarkup([[InlineKeyboardButton("⛔ СТОП", callback_data="stop_gen")]])
