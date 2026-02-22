@@ -1,6 +1,8 @@
+﻿# Справочник: Режим Qwen Edit (v5.3)
+
+Этот файл содержит референсный код бота v5.3 и описание скрипта install.sh для режима редактирования Qwen.
+
 === REFERENCE CODEBASE: BOT v5.3 ===
-
-
 
 import websocket, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html
 
@@ -8,1061 +10,891 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
+# ==========================================
 
+# ⚙️ НАСТРОЙКИ (v5.3 Real Prompt)
 
-\# ==========================================
+# ==========================================
 
-\# ⚙️ НАСТРОЙКИ (v5.3 Real Prompt)
+BOT_TOKEN = os.getenv("TG_TOKEN")
 
-\# ==========================================
+raw_ids = os.getenv("ADMIN_ID")
 
-BOT\_TOKEN = os.getenv("TG\_TOKEN")
+ALLOWED_USERS = [int(x) for x in raw_ids.split(",") if x.strip().isdigit()] if raw_ids else []
 
-raw\_ids = os.getenv("ADMIN\_ID")
+COMFY_PORT = "3000"
 
-ALLOWED\_USERS = \[int(x) for x in raw\_ids.split(",") if x.strip().isdigit()] if raw\_ids else \[]
+RUNPOD_ID = os.environ.get("RUNPOD_POD_ID", "127.0.0.1")
 
+COMFY_SERVER = f"127.0.0.1:{COMFY_PORT}"
 
+BASE_DIR = "/workspace"
 
-COMFY\_PORT = "3000"
+CLIENT_ID = str(uuid.uuid4())
 
-RUNPOD\_ID = os.environ.get("RUNPOD\_POD\_ID", "127.0.0.1")
-
-COMFY\_SERVER = f"127.0.0.1:{COMFY\_PORT}"
-
-BASE\_DIR = "/workspace"
-
-CLIENT\_ID = str(uuid.uuid4())
-
-
-
-\# Настройки режимов
+# Настройки режимов
 
 WORKFLOWS = {
 
-&nbsp;   "edit": {
+    "edit": {
 
-&nbsp;       "file": os.path.join(BASE\_DIR, "workflow\_api.json"), 
+        "file": os.path.join(BASE_DIR, "workflow_api.json"),
 
-&nbsp;       "name": "🎨 Редакт (Qwen)", 
+        "name": "🎨 Редакт (Qwen)",
 
-&nbsp;       "need\_photo": True
+        "need_photo": True
 
-&nbsp;   },
+    },
 
-&nbsp;   "gen": {
+    "gen": {
 
-&nbsp;       "file": os.path.join(BASE\_DIR, "workflow\_gen.json"),  
+        "file": os.path.join(BASE_DIR, "workflow_gen.json"),
 
-&nbsp;       "name": "✨ Генерация (Flux)", 
+        "name": "✨ Генерация (Flux)",
 
-&nbsp;       "need\_photo": False
+        "need_photo": False
 
-&nbsp;   }
+    }
 
 }
 
+PROMPT_NORMAL = "На фото крупным планом показана высокая девушка с изображения 1 которая __действие__ __место__. На ней __наряд__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 
+PROMPT_NSFW = "На фото крупным планом показана высокая девушка с изображения 1, которая __действие_nsfw__ __место__. На ней __наряд_nsfw__. Она __доп_действие_nsfw__. Её наряд выполнен в __цвет__. Из украшений на ней __украшения__. Ракурс __ракурс__, __угол__, __крупность__ __выражения__. Фото в стиле __стиль__, реалистичное освещение."
 
-PROMPT\_NORMAL = "На фото крупным планом показана высокая девушка с изображения 1 которая \_\_действие\_\_ \_\_место\_\_. На ней \_\_наряд\_\_. Её наряд выполнен в \_\_цвет\_\_. Из украшений на ней \_\_украшения\_\_. Ракурс \_\_ракурс\_\_, \_\_угол\_\_, \_\_крупность\_\_ \_\_выражения\_\_. Фото в стиле \_\_стиль\_\_, реалистичное освещение."
+user_data = {}
 
-PROMPT\_NSFW = "На фото крупным планом показана высокая девушка с изображения 1, которая \_\_действие\_nsfw\_\_ \_\_место\_\_. На ней \_\_наряд\_nsfw\_\_. Она \_\_доп\_действие\_nsfw\_\_. Её наряд выполнен в \_\_цвет\_\_. Из украшений на ней \_\_украшения\_\_. Ракурс \_\_ракурс\_\_, \_\_угол\_\_, \_\_крупность\_\_ \_\_выражения\_\_. Фото в стиле \_\_стиль\_\_, реалистичное освещение."
+if not BOT_TOKEN:
 
+    print("❌ ОШИБКА: TG_TOKEN не задан!")
 
+    sys.exit(1)
 
-user\_data = {}
+# ==========================================
 
+# 🛠 ПОМОЩНИКИ
 
+# ==========================================
 
-if not BOT\_TOKEN:
+def escape_html(text):
 
-&nbsp;   print("❌ ОШИБКА: TG\_TOKEN не задан!")
+    """Экранирует символы для HTML (чтобы бот не падал)"""
 
-&nbsp;   sys.exit(1)
+    return html.escape(str(text))
 
+async def check_auth(update: Update):
 
+    if update.effective_user.id not in ALLOWED_USERS:
 
-\# ==========================================
+        await update.message.reply_text("⛔ Доступ запрещен.")
 
-\# 🛠 ПОМОЩНИКИ
+        return False
 
-\# ==========================================
+    return True
 
-def escape\_html(text):
+def get_user_data(uid):
 
-&nbsp;   """Экранирует символы для HTML (чтобы бот не падал)"""
+    if uid not in user_data:
 
-&nbsp;   return html.escape(str(text))
+        user_data[uid] = {
 
+            'image': None,
 
+            'mode': 'normal',
 
-async def check\_auth(update: Update):
+            'wf': 'edit',
 
-&nbsp;   if update.effective\_user.id not in ALLOWED\_USERS:
+            'batch': 1,
 
-&nbsp;       await update.message.reply\_text("⛔ Доступ запрещен.")
+            'dataset_name': 'Batch',
 
-&nbsp;       return False
+            'msg_ids': [],
 
-&nbsp;   return True
+            'loras': {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0},
 
+            'awaiting_lora': None,
 
+            'awaiting_custom_batch': False,
 
-def get\_user\_data(uid):
+            'awaiting_dataset_name': False
 
-&nbsp;   if uid not in user\_data:
+        }
 
-&nbsp;       user\_data\[uid] = {
+    return user_data[uid]
 
-&nbsp;           'image': None, 
+def track_message(user_id, message_id):
 
-&nbsp;           'mode': 'normal', 
+    """Сохраняет ID для очистки"""
 
-&nbsp;           'wf': 'edit', 
+    data = get_user_data(user_id)
 
-&nbsp;           'batch': 1, 
+    if message_id not in data['msg_ids']:
 
-&nbsp;           'dataset\_name': 'Batch', 
+        data['msg_ids'].append(message_id)
 
-&nbsp;           'msg\_ids': \[],
+    if len(data['msg_ids']) > 100:
 
-&nbsp;           'loras': {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}, 
+        data['msg_ids'].pop(0)
 
-&nbsp;           'awaiting\_lora': None,
+def fix_paths_for_linux(workflow):
 
-&nbsp;           'awaiting\_custom\_batch': False,
+    """Меняет  на / (Linux Fix)"""
 
-&nbsp;           'awaiting\_dataset\_name': False
+    for nid, node in workflow.items():
 
-&nbsp;       }
+        if "inputs" in node:
 
-&nbsp;   return user\_data\[uid]
+            for key, val in node["inputs"].items():
 
+                if isinstance(val, str) and "" in val:
 
+                    node["inputs"][key] = val.replace("", "/")
 
-def track\_message(user\_id, message\_id):
+    return workflow
 
-&nbsp;   """Сохраняет ID для очистки"""
+def find_node_id(workflow, class_type_list):
 
-&nbsp;   data = get\_user\_data(user\_id)
+    if isinstance(workflow, dict):
 
-&nbsp;   if message\_id not in data\['msg\_ids']:
+        for node_id, node_data in workflow.items():
 
-&nbsp;       data\['msg\_ids'].append(message\_id)
+            if node_data.get("class_type") in class_type_list: return node_id
 
-&nbsp;   if len(data\['msg\_ids']) > 100: 
+    return None
 
-&nbsp;       data\['msg\_ids'].pop(0)
+# --- 🔥 ПАРСЕР ИМЕН ЛОР ---
 
+def get_lora_names(uid):
 
+    names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
 
-def fix\_paths\_for\_linux(workflow):
+    data = get_user_data(uid)
 
-&nbsp;   """Меняет \\ на / (Linux Fix)"""
+    current_mode = data['wf']
 
-&nbsp;   for nid, node in workflow.items():
+    if current_mode not in WORKFLOWS: return names
 
-&nbsp;       if "inputs" in node:
+    target_file = WORKFLOWS[current_mode]['file']
 
-&nbsp;           for key, val in node\["inputs"].items():
+    if not os.path.exists(target_file): return names
 
-&nbsp;               if isinstance(val, str) and "\\\\" in val:
+    try:
 
-&nbsp;                   node\["inputs"]\[key] = val.replace("\\\\", "/")
+        with open(target_file, "r", encoding="utf-8") as f:
 
-&nbsp;   return workflow
+            wf = json.load(f)
 
+        nid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
 
+        if nid:
 
-def find\_node\_id(workflow, class\_type\_list):
+            inputs = wf[nid]["inputs"]
 
-&nbsp;   if isinstance(workflow, dict):
+            for i in range(1, 5):
 
-&nbsp;       for node\_id, node\_data in workflow.items():
+                key = f"lora_{i}"
 
-&nbsp;           if node\_data.get("class\_type") in class\_type\_list: return node\_id
+                if key in inputs and "lora" in inputs[key]:
 
-&nbsp;   return None
+                    raw = inputs[key]["lora"]
 
+                    clean = raw.replace("", "/").split("/")[-1]
 
+                    clean = clean.replace(".safetensors", "")
 
-\# --- 🔥 ПАРСЕР ИМЕН ЛОР ---
+                    clean = clean.replace("_", " ").replace("-", " ")
 
-def get\_lora\_names(uid):
+                    if len(clean) > 20: clean = clean[:18] + ".."
 
-&nbsp;   names = {1: "LORA 1", 2: "LORA 2", 3: "LORA 3", 4: "LORA 4"}
+                    names[i] = clean
 
-&nbsp;   data = get\_user\_data(uid)
+    except Exception as e:
 
-&nbsp;   current\_mode = data\['wf']
+        print(f"❌ Ошибка имен: {e}")
 
-&nbsp;   
+    return names
 
-&nbsp;   if current\_mode not in WORKFLOWS: return names
+# --- API COMFYUI ---
 
-&nbsp;   target\_file = WORKFLOWS\[current\_mode]\['file']
+def upload_image(file_bytes, file_name):
 
-&nbsp;   
+    try:
 
-&nbsp;   if not os.path.exists(target\_file): return names
+        files = {'image': (file_name, file_bytes)}
 
+        data = {'type': 'input', 'overwrite': 'true'}
 
+        response = requests.post(f"http://{COMFY_SERVER}/upload/image", files=files, data=data)
 
-&nbsp;   try:
+        return response.json()
 
-&nbsp;       with open(target\_file, "r", encoding="utf-8") as f:
+    except: return None
 
-&nbsp;           wf = json.load(f)
+def queue_prompt(prompt_workflow):
 
-&nbsp;       
+    p = {"prompt": prompt_workflow, "client_id": CLIENT_ID}
 
-&nbsp;       nid = find\_node\_id(wf, \["Power Lora Loader (rgthree)"])
+    data = json.dumps(p).encode('utf-8')
 
-&nbsp;       if nid:
+    req = urllib.request.Request(f"http://{COMFY_SERVER}/prompt", data=data)
 
-&nbsp;           inputs = wf\[nid]\["inputs"]
+    return json.loads(urllib.request.urlopen(req).read())
 
-&nbsp;           for i in range(1, 5):
+def get_history(prompt_id):
 
-&nbsp;               key = f"lora\_{i}"
+    try:
 
-&nbsp;               if key in inputs and "lora" in inputs\[key]:
+        with urllib.request.urlopen(f"http://{COMFY_SERVER}/history/{prompt_id}") as response:
 
-&nbsp;                   raw = inputs\[key]\["lora"]
+            return json.loads(response.read())
 
-&nbsp;                   clean = raw.replace("\\\\", "/").split("/")\[-1]
+    except: return {}
 
-&nbsp;                   clean = clean.replace(".safetensors", "")
+def get_view(filename, subfolder, folder_type):
 
-&nbsp;                   clean = clean.replace("\_", " ").replace("-", " ")
+    data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
 
-&nbsp;                   if len(clean) > 20: clean = clean\[:18] + ".."
+    url_values = urllib.parse.urlencode(data)
 
-&nbsp;                   names\[i] = clean
+    with urllib.request.urlopen(f"http://{COMFY_SERVER}/view?{url_values}") as response:
 
-&nbsp;   except Exception as e:
+        return response.read()
 
-&nbsp;       print(f"❌ Ошибка имен: {e}")
+# --- КЛАВИАТУРЫ ---
 
-&nbsp;       
+def get_main_kb(uid):
 
-&nbsp;   return names
+    d = get_user_data(uid)
 
+    wf_name = WORKFLOWS[d['wf']]['name']
 
+    mode_icon = "😇" if d['mode'] == 'normal' else "😈"
 
-\# --- API COMFYUI ---
+    kb = [
 
-def upload\_image(file\_bytes, file\_name):
+        [KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
 
-&nbsp;   try:
+        [KeyboardButton(f"🔄 WF: {wf_name}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
 
-&nbsp;       files = {'image': (file\_name, file\_bytes)}
+        [KeyboardButton(f"{mode_icon} Режим: {d['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
 
-&nbsp;       data = {'type': 'input', 'overwrite': 'true'}
+        [KeyboardButton(f"🏷 Имя сета: {d['dataset_name']}"), KeyboardButton("🌐 Ссылки & WebUI")]
 
-&nbsp;       response = requests.post(f"http://{COMFY\_SERVER}/upload/image", files=files, data=data)
+    ]
 
-&nbsp;       return response.json()
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
-&nbsp;   except: return None
+def get_lora_kb(uid):
 
+    d = get_user_data(uid)
 
+    real_names = get_lora_names(uid)
 
-def queue\_prompt(prompt\_workflow):
+    kb = []
 
-&nbsp;   p = {"prompt": prompt\_workflow, "client\_id": CLIENT\_ID}
+    for i in range(1, 5):
 
-&nbsp;   data = json.dumps(p).encode('utf-8')
+        val = d['loras'].get(i, 0.0)
 
-&nbsp;   req = urllib.request.Request(f"http://{COMFY\_SERVER}/prompt", data=data)
+        status = f"✅ {val}" if val > 0 else "❌ OFF"
 
-&nbsp;   return json.loads(urllib.request.urlopen(req).read())
+        name = real_names[i]
 
+        kb.append([InlineKeyboardButton(f"{i}. {name} | {status}", callback_data=f"edit_lora_{i}")])
 
+    kb.append([InlineKeyboardButton("🔙 Закрыть меню", callback_data="close_lora")])
 
-def get\_history(prompt\_id):
+    return InlineKeyboardMarkup(kb)
 
-&nbsp;   try:
+def get_links_kb():
 
-&nbsp;       with urllib.request.urlopen(f"http://{COMFY\_SERVER}/history/{prompt\_id}") as response:
+    base = f"https://{RUNPOD_ID}"
 
-&nbsp;           return json.loads(response.read())
+    url_comfy = f"{base}-{COMFY_PORT}.proxy.runpod.net/"
 
-&nbsp;   except: return {}
+    url_gallery = f"{base}-8083.proxy.runpod.net/"
 
+    url_down = f"{base}-8081.proxy.runpod.net/"
 
+    url_civit = f"{base}-8082.proxy.runpod.net/"
 
-def get\_view(filename, subfolder, folder\_type):
+    url_jupyter = f"{base}-8888.proxy.runpod.net/"
 
-&nbsp;   data = {"filename": filename, "subfolder": subfolder, "type": folder\_type}
+    kb = [
 
-&nbsp;   url\_values = urllib.parse.urlencode(data)
+        [InlineKeyboardButton("🎨 ComfyUI Web (3000)", url=url_comfy)],
 
-&nbsp;   with urllib.request.urlopen(f"http://{COMFY\_SERVER}/view?{url\_values}") as response:
+        [InlineKeyboardButton("🖼 Галерея (8083)", url=url_gallery), InlineKeyboardButton("💾 Files (8081)", url=url_down)],
 
-&nbsp;       return response.read()
+        [InlineKeyboardButton("🧠 CivitAI (8082)", url=url_civit), InlineKeyboardButton("📂 Jupyter (8888)", url=url_jupyter)],
 
+        [InlineKeyboardButton("❌ Закрыть", callback_data="close_links")]
 
+    ]
 
-\# --- КЛАВИАТУРЫ ---
+    return InlineKeyboardMarkup(kb)
 
-def get\_main\_kb(uid):
+def get_batch_kb():
 
-&nbsp;   d = get\_user\_data(uid)
+    kb = [
 
-&nbsp;   wf\_name = WORKFLOWS\[d\['wf']]\['name']
+        [InlineKeyboardButton("1", callback_data="batch_1"), InlineKeyboardButton("2", callback_data="batch_2"), InlineKeyboardButton("3", callback_data="batch_3")],
 
-&nbsp;   mode\_icon = "😇" if d\['mode'] == 'normal' else "😈"
+        [InlineKeyboardButton("5", callback_data="batch_5"), InlineKeyboardButton("10", callback_data="batch_10")],
 
-&nbsp;   kb = \[
+        [InlineKeyboardButton("⌨️ Свое число", callback_data="batch_custom")]
 
-&nbsp;       \[KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
+    ]
 
-&nbsp;       \[KeyboardButton(f"🔄 WF: {wf\_name}"), KeyboardButton(f"🔢 Кол-во: {d\['batch']}")],
+    return InlineKeyboardMarkup(kb)
 
-&nbsp;       \[KeyboardButton(f"{mode\_icon} Режим: {d\['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
+# --- ОБРАБОТЧИКИ ---
 
-&nbsp;       \[KeyboardButton(f"🏷 Имя сета: {d\['dataset\_name']}"), KeyboardButton("🌐 Ссылки \& WebUI")]
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-&nbsp;   ]
+    if not await check_auth(update): return
 
-&nbsp;   return ReplyKeyboardMarkup(kb, resize\_keyboard=True)
+    uid = update.effective_user.id
 
+    msg = await update.message.reply_text(f"🎛 **NeuroGraph v5.3**nID: `{RUNPOD_ID}`", reply_markup=get_main_kb(uid), parse_mode="Markdown")
 
+    track_message(uid, update.message.message_id)
 
-def get\_lora\_kb(uid):
+    track_message(uid, msg.message_id)
 
-&nbsp;   d = get\_user\_data(uid)
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-&nbsp;   real\_names = get\_lora\_names(uid)
+    if not await check_auth(update): return
 
-&nbsp;   kb = \[]
+    uid = update.effective_user.id
 
-&nbsp;   for i in range(1, 5):
+    track_message(uid, update.message.message_id)
 
-&nbsp;       val = d\['loras'].get(i, 0.0)
+    msg = await update.message.reply_text("📥 Загрузка...")
 
-&nbsp;       status = f"✅ {val}" if val > 0 else "❌ OFF"
+    track_message(uid, msg.message_id)
 
-&nbsp;       name = real\_names\[i]
+    try:
 
-&nbsp;       kb.append(\[InlineKeyboardButton(f"{i}. {name} | {status}", callback\_data=f"edit\_lora\_{i}")])
+        photo = await update.message.photo[-1].get_file()
 
-&nbsp;   kb.append(\[InlineKeyboardButton("🔙 Закрыть меню", callback\_data="close\_lora")])
+        fname = f"user_{uid}_{uuid.uuid4().hex[:4]}.jpg"
 
-&nbsp;   return InlineKeyboardMarkup(kb)
+        fbytes = await photo.download_as_bytearray()
 
+        resp = upload_image(fbytes, fname)
 
+        if resp:
 
-def get\_links\_kb():
+            real_name = resp.get("name", fname)
 
-&nbsp;   base = f"https://{RUNPOD\_ID}"
+            get_user_data(uid)['image'] = real_name
 
-&nbsp;   url\_comfy = f"{base}-{COMFY\_PORT}.proxy.runpod.net/"
+            await msg.edit_text(f"✅ Фото принято: `{real_name}`", parse_mode="Markdown")
 
-&nbsp;   url\_gallery = f"{base}-8083.proxy.runpod.net/"
+        else: await msg.edit_text("❌ Ошибка загрузки.")
 
-&nbsp;   url\_down = f"{base}-8081.proxy.runpod.net/"
+    except Exception as e: await msg.edit_text(f"Ошибка: {e}")
 
-&nbsp;   url\_civit = f"{base}-8082.proxy.runpod.net/"
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-&nbsp;   url\_jupyter = f"{base}-8888.proxy.runpod.net/"
+    query = update.callback_query
 
-&nbsp;   
+    uid = query.from_user.id
 
-&nbsp;   kb = \[
+    d = get_user_data(uid)
 
-&nbsp;       \[InlineKeyboardButton("🎨 ComfyUI Web (3000)", url=url\_comfy)],
+    await query.answer()
 
-&nbsp;       \[InlineKeyboardButton("🖼 Галерея (8083)", url=url\_gallery), InlineKeyboardButton("💾 Files (8081)", url=url\_down)],
+    if query.data.startswith("batch_"):
 
-&nbsp;       \[InlineKeyboardButton("🧠 CivitAI (8082)", url=url\_civit), InlineKeyboardButton("📂 Jupyter (8888)", url=url\_jupyter)],
+        if query.data == "batch_custom":
 
-&nbsp;       \[InlineKeyboardButton("❌ Закрыть", callback\_data="close\_links")]
+            d['awaiting_custom_batch'] = True
 
-&nbsp;   ]
+            await query.message.edit_text("⌨️ **Введите число** (например 50):", parse_mode="Markdown")
 
-&nbsp;   return InlineKeyboardMarkup(kb)
+        else:
 
+            count = int(query.data.split("_")[1])
 
+            d['batch'] = count
 
-def get\_batch\_kb():
+            await query.message.edit_text(f"🔢 Batch: **{count}**", parse_mode="Markdown")
 
-&nbsp;   kb = \[
+            m = await context.bot.send_message(chat_id=uid, text="Меню обновлено", reply_markup=get_main_kb(uid))
 
-&nbsp;       \[InlineKeyboardButton("1", callback\_data="batch\_1"), InlineKeyboardButton("2", callback\_data="batch\_2"), InlineKeyboardButton("3", callback\_data="batch\_3")],
+            track_message(uid, m.message_id)
 
-&nbsp;       \[InlineKeyboardButton("5", callback\_data="batch\_5"), InlineKeyboardButton("10", callback\_data="batch\_10")],
+    elif query.data.startswith("edit_lora_"):
 
-&nbsp;       \[InlineKeyboardButton("⌨️ Свое число", callback\_data="batch\_custom")]
+        slot = int(query.data.split("_")[2])
 
-&nbsp;   ]
+        d['awaiting_lora'] = slot
 
-&nbsp;   return InlineKeyboardMarkup(kb)
+        names = get_lora_names(uid)
 
+        await query.message.edit_text(f"✍️ **{names[slot]}**nВведите вес (0.1 - 1.0) или 0:", parse_mode="Markdown")
 
+    elif query.data == "close_lora" or query.data == "close_links":
 
-\# --- ОБРАБОТЧИКИ ---
+        await query.message.delete()
 
-async def start(update: Update, context: ContextTypes.DEFAULT\_TYPE):
+async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-&nbsp;   if not await check\_auth(update): return
+    if not await check_auth(update): return
 
-&nbsp;   uid = update.effective\_user.id
+    uid = update.effective_user.id
 
-&nbsp;   msg = await update.message.reply\_text(f"🎛 \*\*NeuroGraph v5.3\*\*\\nID: `{RUNPOD\_ID}`", reply\_markup=get\_main\_kb(uid), parse\_mode="Markdown")
+    text = update.message.text
 
-&nbsp;   track\_message(uid, update.message.message\_id)
+    d = get_user_data(uid)
 
-&nbsp;   track\_message(uid, msg.message\_id)
+    track_message(uid, update.message.message_id)
 
+    # 1. BATCH CUSTOM
 
+    if d.get('awaiting_custom_batch'):
 
-async def handle\_photo(update: Update, context: ContextTypes.DEFAULT\_TYPE):
+        if text.isdigit():
 
-&nbsp;   if not await check\_auth(update): return
+            val = int(text)
 
-&nbsp;   uid = update.effective\_user.id
+            d['batch'] = val
 
-&nbsp;   track\_message(uid, update.message.message\_id)
+            d['awaiting_custom_batch'] = False
 
-&nbsp;   msg = await update.message.reply\_text("📥 Загрузка...")
+            m = await update.message.reply_text(f"🔢 Установлен Batch: **{val}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
 
-&nbsp;   track\_message(uid, msg.message\_id)
+            track_message(uid, m.message_id)
 
-&nbsp;   try:
+        else:
 
-&nbsp;       photo = await update.message.photo\[-1].get\_file()
+            m = await update.message.reply_text("⚠️ Введите целое число!")
 
-&nbsp;       fname = f"user\_{uid}\_{uuid.uuid4().hex\[:4]}.jpg"
+            track_message(uid, m.message_id)
 
-&nbsp;       fbytes = await photo.download\_as\_bytearray()
+        return
 
-&nbsp;       resp = upload\_image(fbytes, fname)
+    # 2. DATASET NAME
 
-&nbsp;       if resp:
+    if d.get('awaiting_dataset_name'):
 
-&nbsp;           real\_name = resp.get("name", fname)
+        d['dataset_name'] = text
 
-&nbsp;           get\_user\_data(uid)\['image'] = real\_name
+        d['awaiting_dataset_name'] = False
 
-&nbsp;           await msg.edit\_text(f"✅ Фото принято: `{real\_name}`", parse\_mode="Markdown")
+        m = await update.message.reply_text(f"🏷 Имя сета: **{text}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
 
-&nbsp;       else: await msg.edit\_text("❌ Ошибка загрузки.")
+        track_message(uid, m.message_id)
 
-&nbsp;   except Exception as e: await msg.edit\_text(f"Ошибка: {e}")
+        return
 
+    # 3. LORA WEIGHT
 
+    if d['awaiting_lora']:
 
-async def handle\_callback(update: Update, context: ContextTypes.DEFAULT\_TYPE):
+        try:
 
-&nbsp;   query = update.callback\_query
+            val = float(text.replace(",", "."))
 
-&nbsp;   uid = query.from\_user.id
+            slot = d['awaiting_lora']
 
-&nbsp;   d = get\_user\_data(uid)
+            d['loras'][slot] = val
 
-&nbsp;   await query.answer()
+            d['awaiting_lora'] = None
 
+            names = get_lora_names(uid)
 
+            m1 = await update.message.reply_text(f"✅ {names[slot]} -> {val}", reply_markup=get_main_kb(uid))
 
-&nbsp;   if query.data.startswith("batch\_"):
+            track_message(uid, m1.message_id)
 
-&nbsp;       if query.data == "batch\_custom":
+            m2 = await update.message.reply_text("🎛 Микшер:", reply_markup=get_lora_kb(uid))
 
-&nbsp;           d\['awaiting\_custom\_batch'] = True
+            track_message(uid, m2.message_id)
 
-&nbsp;           await query.message.edit\_text("⌨️ \*\*Введите число\*\* (например 50):", parse\_mode="Markdown")
+            return
 
-&nbsp;       else:
+        except:
 
-&nbsp;           count = int(query.data.split("\_")\[1])
+            m = await update.message.reply_text("⚠️ Введите число")
 
-&nbsp;           d\['batch'] = count
+            track_message(uid, m.message_id)
 
-&nbsp;           await query.message.edit\_text(f"🔢 Batch: \*\*{count}\*\*", parse\_mode="Markdown")
+            return
 
-&nbsp;           m = await context.bot.send\_message(chat\_id=uid, text="Меню обновлено", reply\_markup=get\_main\_kb(uid))
+    # 4. CLEAN
 
-&nbsp;           track\_message(uid, m.message\_id)
+    if text == "🗑 ОЧИСТИТЬ":
 
+        count = 0
 
+        for mid in reversed(d['msg_ids']):
 
-&nbsp;   elif query.data.startswith("edit\_lora\_"):
+            try:
 
-&nbsp;       slot = int(query.data.split("\_")\[2])
+                await context.bot.delete_message(chat_id=uid, message_id=mid)
 
-&nbsp;       d\['awaiting\_lora'] = slot
+                count += 1
 
-&nbsp;       names = get\_lora\_names(uid)
+            except: pass
 
-&nbsp;       await query.message.edit\_text(f"✍️ \*\*{names\[slot]}\*\*\\nВведите вес (0.1 - 1.0) или 0:", parse\_mode="Markdown")
+        d['msg_ids'] = []
 
-&nbsp;   
+        clean_msg = await update.message.reply_text(f"🧹 Чисто ({count} удалено).", reply_markup=get_main_kb(uid))
 
-&nbsp;   elif query.data == "close\_lora" or query.data == "close\_links":
+        track_message(uid, clean_msg.message_id)
 
-&nbsp;       await query.message.delete()
+    # 5. MENUS
 
+    elif text == "🎛 LORA MIXER":
 
+        m = await update.message.reply_text("🎛 Настройка Лор:", reply_markup=get_lora_kb(uid))
 
-async def handle\_msg(update: Update, context: ContextTypes.DEFAULT\_TYPE):
+        track_message(uid, m.message_id)
 
-&nbsp;   if not await check\_auth(update): return
+    elif text == "🌐 Ссылки & WebUI":
 
-&nbsp;   uid = update.effective\_user.id
+        m = await update.message.reply_text("🔗 Порты:", reply_markup=get_links_kb())
 
-&nbsp;   text = update.message.text
+        track_message(uid, m.message_id)
 
-&nbsp;   d = get\_user\_data(uid)
+    elif text.startswith("🔢"):
 
-&nbsp;   track\_message(uid, update.message.message\_id)
+        m = await update.message.reply_text("Количество:", reply_markup=get_batch_kb())
 
+        track_message(uid, m.message_id)
 
+    elif text.startswith("🏷"):
 
-&nbsp;   # 1. BATCH CUSTOM
+        d['awaiting_dataset_name'] = True
 
-&nbsp;   if d.get('awaiting\_custom\_batch'):
+        m = await update.message.reply_text("📝 Введите новое имя для файлов (префикс):")
 
-&nbsp;       if text.isdigit():
+        track_message(uid, m.message_id)
 
-&nbsp;           val = int(text)
+    elif text.startswith("🔄"):
 
-&nbsp;           d\['batch'] = val
+        keys = list(WORKFLOWS.keys())
 
-&nbsp;           d\['awaiting\_custom\_batch'] = False
+        idx = keys.index(d['wf'])
 
-&nbsp;           m = await update.message.reply\_text(f"🔢 Установлен Batch: \*\*{val}\*\*", reply\_markup=get\_main\_kb(uid), parse\_mode="Markdown")
+        d['wf'] = keys[(idx + 1) % len(keys)]
 
-&nbsp;           track\_message(uid, m.message\_id)
+        m = await update.message.reply_text(f"🔄 Режим: **{WORKFLOWS[d['wf']]['name']}**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
 
-&nbsp;       else:
+        track_message(uid, m.message_id)
 
-&nbsp;           m = await update.message.reply\_text("⚠️ Введите целое число!")
+    elif "Режим:" in text:
 
-&nbsp;           track\_message(uid, m.message\_id)
+        d['mode'] = 'nsfw' if d['mode'] == 'normal' else 'normal'
 
-&nbsp;       return
+        m = await update.message.reply_text(f"Режим: {d['mode'].upper()}", reply_markup=get_main_kb(uid))
 
+        track_message(uid, m.message_id)
 
+    elif text == "🚀 ГЕНЕРАЦИЯ":
 
-&nbsp;   # 2. DATASET NAME
+        await run_generation(update, context, uid)
 
-&nbsp;   if d.get('awaiting\_dataset\_name'):
+    else:
 
-&nbsp;       d\['dataset\_name'] = text
+        await run_generation(update, context, uid, manual_prompt=text)
 
-&nbsp;       d\['awaiting\_dataset\_name'] = False
+async def run_generation(update, context, uid, manual_prompt=None):
 
-&nbsp;       m = await update.message.reply\_text(f"🏷 Имя сета: \*\*{text}\*\*", reply\_markup=get\_main\_kb(uid), parse\_mode="Markdown")
+    d = get_user_data(uid)
 
-&nbsp;       track\_message(uid, m.message\_id)
+    cfg = WORKFLOWS[d['wf']]
 
-&nbsp;       return
+    if cfg['need_photo'] and not d['image']:
 
+        m = await update.message.reply_text(f"⚠️ Нужно фото!")
 
+        track_message(uid, m.message_id)
 
-&nbsp;   # 3. LORA WEIGHT
+        return
 
-&nbsp;   if d\['awaiting\_lora']:
+    prompt_txt = manual_prompt if manual_prompt else (PROMPT_NORMAL if d['mode'] == 'normal' else PROMPT_NSFW)
 
-&nbsp;       try:
+    status_msg = await update.message.reply_text(f"🚀 Запуск {d['batch']} шт...n📂 Set: {d['dataset_name']}")
 
-&nbsp;           val = float(text.replace(",", "."))
+    track_message(uid, status_msg.message_id)
 
-&nbsp;           slot = d\['awaiting\_lora']
+    for i in range(d['batch']):
 
-&nbsp;           d\['loras']\[slot] = val
+        start_ts = time.time()
 
-&nbsp;           d\['awaiting\_lora'] = None
+        try:
 
-&nbsp;           names = get\_lora\_names(uid)
+            if not os.path.exists(cfg['file']):
 
-&nbsp;           m1 = await update.message.reply\_text(f"✅ {names\[slot]} -> {val}", reply\_markup=get\_main\_kb(uid))
+                await context.bot.send_message(uid, f"❌ Нет файла: {cfg['file']}")
 
-&nbsp;           track\_message(uid, m1.message\_id)
+                break
 
-&nbsp;           m2 = await update.message.reply\_text("🎛 Микшер:", reply\_markup=get\_lora\_kb(uid))
+            with open(cfg['file'], "r", encoding="utf-8") as f: wf = json.load(f)
 
-&nbsp;           track\_message(uid, m2.message\_id)
+            # === AUTO-FIX ===
 
-&nbsp;           return
+            wf = fix_paths_for_linux(wf)
 
-&nbsp;       except:
+            # === SET NAME (Node 211) ===
 
-&nbsp;           m = await update.message.reply\_text("⚠️ Введите число")
+            if "211" in wf and "inputs" in wf["211"]:
 
-&nbsp;           track\_message(uid, m.message\_id)
+                wf["211"]["inputs"]["value"] = d['dataset_name']
 
-&nbsp;           return
+            # === LORA MIXER ===
 
+            lid = find_node_id(wf, ["Power Lora Loader (rgthree)"])
 
+            if lid:
 
-&nbsp;   # 4. CLEAN
+                for s in range(1, 5):
 
-&nbsp;   if text == "🗑 ОЧИСТИТЬ":
+                    k = f"lora_{s}"
 
-&nbsp;       count = 0
+                    if k in wf[lid]["inputs"]:
 
-&nbsp;       for mid in reversed(d\['msg\_ids']):
+                        v = d['loras'].get(s, 0.0)
 
-&nbsp;           try: 
+                        wf[lid]["inputs"][k]["strength"] = v
 
-&nbsp;               await context.bot.delete\_message(chat\_id=uid, message\_id=mid)
+                        wf[lid]["inputs"][k]["on"] = (v > 0)
 
-&nbsp;               count += 1
+            # === SEED ===
 
-&nbsp;           except: pass
+            sid = find_node_id(wf, ["easy seed", "EasySeed"])
 
-&nbsp;       d\['msg\_ids'] = \[]
+            if sid: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
-&nbsp;       clean\_msg = await update.message.reply\_text(f"🧹 Чисто ({count} удалено).", reply\_markup=get\_main\_kb(uid))
+            else:
 
-&nbsp;       track\_message(uid, clean\_msg.message\_id)
+                sid = find_node_id(wf, ["Seed", "KSampler"])
 
+                if sid: wf[sid]["inputs"]["seed"] = random.randint(1, 10**15)
 
+            # === PROMPT & IMAGE ===
 
-&nbsp;   # 5. MENUS
+            iid = find_node_id(wf, ["LoadImage"])
 
-&nbsp;   elif text == "🎛 LORA MIXER":
+            tid = find_node_id(wf, ["String Literal", "CLIPTextEncode", "PrimitiveString"])
 
-&nbsp;       m = await update.message.reply\_text("🎛 Настройка Лор:", reply\_markup=get\_lora\_kb(uid))
+            if iid and cfg['need_photo']: wf[iid]["inputs"]["image"] = d['image']
 
-&nbsp;       track\_message(uid, m.message\_id)
+            if tid:
 
+                tkey = "string" if "string" in wf[tid]["inputs"] else "text"
 
+                wf[tid]["inputs"][tkey] = prompt_txt
 
-&nbsp;   elif text == "🌐 Ссылки \& WebUI":
+            res = queue_prompt(wf)
 
-&nbsp;       m = await update.message.reply\_text("🔗 Порты:", reply\_markup=get\_links\_kb())
+            if 'error' in res:
 
-&nbsp;       track\_message(uid, m.message\_id)
+                await context.bot.send_message(uid, f"Comfy Error: {res['error']}")
 
-&nbsp;   
+                break
 
-&nbsp;   elif text.startswith("🔢"):
+            pid = res['prompt_id']
 
-&nbsp;       m = await update.message.reply\_text("Количество:", reply\_markup=get\_batch\_kb())
+            while True:
 
-&nbsp;       track\_message(uid, m.message\_id)
+                h = get_history(pid)
 
-&nbsp;   
+                if pid in h: break
 
-&nbsp;   elif text.startswith("🏷"):
+                time.sleep(1)
 
-&nbsp;       d\['awaiting\_dataset\_name'] = True
+            dur = time.time() - start_ts
 
-&nbsp;       m = await update.message.reply\_text("📝 Введите новое имя для файлов (префикс):")
+            out = h[pid]['outputs']
 
-&nbsp;       track\_message(uid, m.message\_id)
+            found = False
 
-&nbsp;   
+            # 🔥 ПОИСК РЕАЛЬНОГО ТЕКСТА В ИСТОРИИ (Node 207 и др)
 
-&nbsp;   elif text.startswith("🔄"):
+            real_prompt = prompt_txt # Значение по умолчанию
 
-&nbsp;       keys = list(WORKFLOWS.keys())
+            for nid in out:
 
-&nbsp;       idx = keys.index(d\['wf'])
+                if 'text' in out[nid]:
 
-&nbsp;       d\['wf'] = keys\[(idx + 1) % len(keys)]
+                    val = out[nid]['text']
 
-&nbsp;       m = await update.message.reply\_text(f"🔄 Режим: \*\*{WORKFLOWS\[d\['wf']]\['name']}\*\*", reply\_markup=get\_main\_kb(uid), parse\_mode="Markdown")
+                    if isinstance(val, list): real_prompt = " ".join([str(x) for x in val])
 
-&nbsp;       track\_message(uid, m.message\_id)
+                    else: real_prompt = str(val)
 
-&nbsp;   
+                    break # Берем первый найденный текст (обычно это ShowText)
 
-&nbsp;   elif "Режим:" in text:
+            for nid in out:
 
-&nbsp;       d\['mode'] = 'nsfw' if d\['mode'] == 'normal' else 'normal'
+                if 'images' in out[nid]:
 
-&nbsp;       m = await update.message.reply\_text(f"Режим: {d\['mode'].upper()}", reply\_markup=get\_main\_kb(uid))
+                    for img in out[nid]['images']:
 
-&nbsp;       track\_message(uid, m.message\_id)
+                        idata = get_view(img['filename'], img['subfolder'], img['type'])
 
-&nbsp;   
+                        # 🔥 ОТОБРАЖЕНИЕ: Без спойлера, реальный текст, HTML экранирование
 
-&nbsp;   elif text == "🚀 ГЕНЕРАЦИЯ":
+                        safe_prompt = escape_html(real_prompt[:900]) # Обрезаем до 900 символов
 
-&nbsp;       await run\_generation(update, context, uid)
+                        cap = f"<b>🖼 {i+1}/{d['batch']} ({dur:.1f}s)</b>nn{safe_prompt}"
 
-&nbsp;   
+                        m = await context.bot.send_photo(uid, idata, caption=cap, parse_mode="HTML")
 
-&nbsp;   else:
+                        track_message(uid, m.message_id)
 
-&nbsp;       await run\_generation(update, context, uid, manual\_prompt=text)
+                        found = True
 
+            if not found:
 
+                m = await context.bot.send_message(uid, "⚠️ Пусто")
 
-async def run\_generation(update, context, uid, manual\_prompt=None):
+                track_message(uid, m.message_id)
 
-&nbsp;   d = get\_user\_data(uid)
+        except Exception as e:
 
-&nbsp;   cfg = WORKFLOWS\[d\['wf']]
+            m = await context.bot.send_message(uid, f"Crash: {e}")
 
-&nbsp;   
+            track_message(uid, m.message_id)
 
-&nbsp;   if cfg\['need\_photo'] and not d\['image']:
+            traceback.print_exc()
 
-&nbsp;       m = await update.message.reply\_text(f"⚠️ Нужно фото!")
+    try: await context.bot.delete_message(uid, status_msg.message_id)
 
-&nbsp;       track\_message(uid, m.message\_id)
+    except: pass
 
-&nbsp;       return
+    fin = await context.bot.send_message(uid, "🏁 Готово!")
 
+    track_message(uid, fin.message_id)
 
+if __name__ == '__main__':
 
-&nbsp;   prompt\_txt = manual\_prompt if manual\_prompt else (PROMPT\_NORMAL if d\['mode'] == 'normal' else PROMPT\_NSFW)
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-&nbsp;   
+    app.add_handler(CommandHandler('start', start))
 
-&nbsp;   status\_msg = await update.message.reply\_text(f"🚀 Запуск {d\['batch']} шт...\\n📂 Set: {d\['dataset\_name']}")
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-&nbsp;   track\_message(uid, status\_msg.message\_id)
+    app.add_handler(CallbackQueryHandler(handle_callback))
 
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
 
+    print(f"Bot v5.3 (Real Prompt) Started on {RUNPOD_ID}")
 
-&nbsp;   for i in range(d\['batch']):
-
-&nbsp;       start\_ts = time.time()
-
-&nbsp;       try:
-
-&nbsp;           if not os.path.exists(cfg\['file']):
-
-&nbsp;               await context.bot.send\_message(uid, f"❌ Нет файла: {cfg\['file']}")
-
-&nbsp;               break
-
-&nbsp;           
-
-&nbsp;           with open(cfg\['file'], "r", encoding="utf-8") as f: wf = json.load(f)
-
-
-
-&nbsp;           # === AUTO-FIX ===
-
-&nbsp;           wf = fix\_paths\_for\_linux(wf)
-
-
-
-&nbsp;           # === SET NAME (Node 211) ===
-
-&nbsp;           if "211" in wf and "inputs" in wf\["211"]:
-
-&nbsp;               wf\["211"]\["inputs"]\["value"] = d\['dataset\_name']
-
-
-
-&nbsp;           # === LORA MIXER ===
-
-&nbsp;           lid = find\_node\_id(wf, \["Power Lora Loader (rgthree)"])
-
-&nbsp;           if lid:
-
-&nbsp;               for s in range(1, 5):
-
-&nbsp;                   k = f"lora\_{s}"
-
-&nbsp;                   if k in wf\[lid]\["inputs"]:
-
-&nbsp;                       v = d\['loras'].get(s, 0.0)
-
-&nbsp;                       wf\[lid]\["inputs"]\[k]\["strength"] = v
-
-&nbsp;                       wf\[lid]\["inputs"]\[k]\["on"] = (v > 0)
-
-
-
-&nbsp;           # === SEED ===
-
-&nbsp;           sid = find\_node\_id(wf, \["easy seed", "EasySeed"])
-
-&nbsp;           if sid: wf\[sid]\["inputs"]\["seed"] = random.randint(1, 10\*\*15)
-
-&nbsp;           else:
-
-&nbsp;               sid = find\_node\_id(wf, \["Seed", "KSampler"])
-
-&nbsp;               if sid: wf\[sid]\["inputs"]\["seed"] = random.randint(1, 10\*\*15)
-
-
-
-&nbsp;           # === PROMPT \& IMAGE ===
-
-&nbsp;           iid = find\_node\_id(wf, \["LoadImage"])
-
-&nbsp;           tid = find\_node\_id(wf, \["String Literal", "CLIPTextEncode", "PrimitiveString"])
-
-&nbsp;           
-
-&nbsp;           if iid and cfg\['need\_photo']: wf\[iid]\["inputs"]\["image"] = d\['image']
-
-&nbsp;           if tid:
-
-&nbsp;               tkey = "string" if "string" in wf\[tid]\["inputs"] else "text"
-
-&nbsp;               wf\[tid]\["inputs"]\[tkey] = prompt\_txt
-
-
-
-&nbsp;           res = queue\_prompt(wf)
-
-&nbsp;           if 'error' in res:
-
-&nbsp;               await context.bot.send\_message(uid, f"Comfy Error: {res\['error']}")
-
-&nbsp;               break
-
-&nbsp;           
-
-&nbsp;           pid = res\['prompt\_id']
-
-&nbsp;           while True:
-
-&nbsp;               h = get\_history(pid)
-
-&nbsp;               if pid in h: break
-
-&nbsp;               time.sleep(1)
-
-&nbsp;           
-
-&nbsp;           dur = time.time() - start\_ts
-
-&nbsp;           out = h\[pid]\['outputs']
-
-&nbsp;           found = False
-
-&nbsp;           
-
-&nbsp;           # 🔥 ПОИСК РЕАЛЬНОГО ТЕКСТА В ИСТОРИИ (Node 207 и др)
-
-&nbsp;           real\_prompt = prompt\_txt # Значение по умолчанию
-
-&nbsp;           for nid in out:
-
-&nbsp;               if 'text' in out\[nid]:
-
-&nbsp;                   val = out\[nid]\['text']
-
-&nbsp;                   if isinstance(val, list): real\_prompt = " ".join(\[str(x) for x in val])
-
-&nbsp;                   else: real\_prompt = str(val)
-
-&nbsp;                   break # Берем первый найденный текст (обычно это ShowText)
-
-
-
-&nbsp;           for nid in out:
-
-&nbsp;               if 'images' in out\[nid]:
-
-&nbsp;                   for img in out\[nid]\['images']:
-
-&nbsp;                       idata = get\_view(img\['filename'], img\['subfolder'], img\['type'])
-
-&nbsp;                       
-
-&nbsp;                       # 🔥 ОТОБРАЖЕНИЕ: Без спойлера, реальный текст, HTML экранирование
-
-&nbsp;                       safe\_prompt = escape\_html(real\_prompt\[:900]) # Обрезаем до 900 символов
-
-&nbsp;                       cap = f"<b>🖼 {i+1}/{d\['batch']} ({dur:.1f}s)</b>\\n\\n{safe\_prompt}"
-
-&nbsp;                       
-
-&nbsp;                       m = await context.bot.send\_photo(uid, idata, caption=cap, parse\_mode="HTML")
-
-&nbsp;                       track\_message(uid, m.message\_id)
-
-&nbsp;                       found = True
-
-&nbsp;           
-
-&nbsp;           if not found:
-
-&nbsp;               m = await context.bot.send\_message(uid, "⚠️ Пусто")
-
-&nbsp;               track\_message(uid, m.message\_id)
-
-
-
-&nbsp;       except Exception as e:
-
-&nbsp;           m = await context.bot.send\_message(uid, f"Crash: {e}")
-
-&nbsp;           track\_message(uid, m.message\_id)
-
-&nbsp;           traceback.print\_exc()
-
-
-
-&nbsp;   try: await context.bot.delete\_message(uid, status\_msg.message\_id)
-
-&nbsp;   except: pass
-
-&nbsp;   
-
-&nbsp;   fin = await context.bot.send\_message(uid, "🏁 Готово!")
-
-&nbsp;   track\_message(uid, fin.message\_id)
-
-
-
-if \_\_name\_\_ == '\_\_main\_\_':
-
-&nbsp;   app = ApplicationBuilder().token(BOT\_TOKEN).build()
-
-&nbsp;   app.add\_handler(CommandHandler('start', start))
-
-&nbsp;   app.add\_handler(MessageHandler(filters.PHOTO, handle\_photo))
-
-&nbsp;   app.add\_handler(CallbackQueryHandler(handle\_callback))
-
-&nbsp;   app.add\_handler(MessageHandler(filters.TEXT \& (~filters.COMMAND), handle\_msg))
-
-&nbsp;   print(f"Bot v5.3 (Real Prompt) Started on {RUNPOD\_ID}")
-
-&nbsp;   app.run\_polling()
-
-
-
-
-
-
+    app.run_polling()
 
 === REFERENCE SCRIPT: INSTALL.SH ===
 
+#!/bin/bash
 
+# ПУТИ
 
-\#!/bin/bash
+VENV_PYTHON="/workspace/venv/bin/python"
 
+VENV_PIP="/workspace/venv/bin/pip"
 
+L_PATH="/workspace/ComfyUI/models/loras"
 
-\# ПУТИ
-
-VENV\_PYTHON="/workspace/venv/bin/python"
-
-VENV\_PIP="/workspace/venv/bin/pip"
-
-L\_PATH="/workspace/ComfyUI/models/loras"
-
-
-
-\# 1. ЖДЕМ ПОРТ 3000
+# 1. ЖДЕМ ПОРТ 3000
 
 echo "⏳ Жду порт 3000..."
 
 while ! wget -q --spider http://127.0.0.1:3000; do
 
-&nbsp; sleep 2
+  sleep 2
 
 done
 
 echo "✅ Порт 3000 активен."
 
-
-
-\# 2. БИБЛИОТЕКИ
+# 2. БИБЛИОТЕКИ
 
 echo "📦 Ставлю библиотеки..."
 
-$VENV\_PIP install python-telegram-bot requests websocket-client > /dev/null 2>\&1
+$VENV_PIP install python-telegram-bot requests websocket-client > /dev/null 2>&1
 
-
-
-\# 3. НОДЫ
+# 3. НОДЫ
 
 echo "🧩 Ставлю ноды..."
 
-cd /workspace/ComfyUI/custom\_nodes
+cd /workspace/ComfyUI/custom_nodes
 
-\[ ! -d "mikey\_nodes" ] \&\& git clone https://github.com/bash-j/mikey\_nodes.git
+[ ! -d "mikey_nodes" ] && git clone https://github.com/bash-j/mikey_nodes.git
 
-\[ ! -d "comfy-image-saver" ] \&\& git clone https://github.com/giriss/comfy-image-saver.git
+[ ! -d "comfy-image-saver" ] && git clone https://github.com/giriss/comfy-image-saver.git
 
-\[ ! -d "ComfyUI-Custom-Scripts" ] \&\& git clone https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git
+[ ! -d "ComfyUI-Custom-Scripts" ] && git clone https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git
 
-
-
-\# 4. КАЧАЕМ ЛОРЫ (С ПОДРОБНЫМ ЛОГОМ)
+# 4. КАЧАЕМ ЛОРЫ (С ПОДРОБНЫМ ЛОГОМ)
 
 echo "⬇️ Качаю Лоры..."
 
-mkdir -p "$L\_PATH"
+mkdir -p "$L_PATH"
 
+download_model() {
 
+    url="$1"
 
-download\_model() {
+    file="$2"
 
-&nbsp;   url="$1"
+    echo "---------------------------------------------------"
 
-&nbsp;   file="$2"
+    echo "📥 Скачиваю: $file"
 
-&nbsp;   echo "---------------------------------------------------"
+    if [ -z "$HF_TOKEN" ]; then
 
-&nbsp;   echo "📥 Скачиваю: $file"
+        echo "⚠️ HF_TOKEN не найден в переменных! Пробую качать без пароля..."
 
-&nbsp;   
+        # Убрал -q, чтобы видеть ошибки
 
-&nbsp;   if \[ -z "$HF\_TOKEN" ]; then
+        wget -nc -O "$L_PATH/$file" "$url"
 
-&nbsp;       echo "⚠️ HF\_TOKEN не найден в переменных! Пробую качать без пароля..."
+    else
 
-&nbsp;       # Убрал -q, чтобы видеть ошибки
+        echo "🔒 Использую HF_TOKEN для авторизации..."
 
-&nbsp;       wget -nc -O "$L\_PATH/$file" "$url"
+        # Убрал -q, добавил хедер
 
-&nbsp;   else
+        wget --header "Authorization: Bearer $HF_TOKEN" -nc -O "$L_PATH/$file" "$url"
 
-&nbsp;       echo "🔒 Использую HF\_TOKEN для авторизации..."
-
-&nbsp;       # Убрал -q, добавил хедер
-
-&nbsp;       wget --header "Authorization: Bearer $HF\_TOKEN" -nc -O "$L\_PATH/$file" "$url"
-
-&nbsp;   fi
+    fi
 
 }
 
+# Список файлов
 
+download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen4Play_v2.safetensors?download=true" "Qwen4Play_v2.safetensors"
 
-\# Список файлов
+download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen_Snofs_1_3.safetensors?download=true" "Qwen_Snofs_1_3.safetensors"
 
-download\_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen4Play\_v2.safetensors?download=true" "Qwen4Play\_v2.safetensors"
+download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/breast_slider_qwen_v1.safetensors?download=true" "breast_slider_qwen_v1.safetensors"
 
-download\_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/Qwen\_Snofs\_1\_3.safetensors?download=true" "Qwen\_Snofs\_1\_3.safetensors"
-
-download\_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/breast\_slider\_qwen\_v1.safetensors?download=true" "breast\_slider\_qwen\_v1.safetensors"
-
-download\_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/hips\_size\_slider\_v1.safetensors?download=true" "hips\_size\_slider\_v1.safetensors"
-
-
+download_model "https://huggingface.co/datasets/AleksandrGrey87/My-Comfy-Pack/resolve/main/hips_size_slider_v1.safetensors?download=true" "hips_size_slider_v1.safetensors"
 
 echo "---------------------------------------------------"
 
 echo "📂 ИТОГОВАЯ ПРОВЕРКА ПАПКИ (Размер не должен быть 0):"
 
-ls -lh "$L\_PATH"
+ls -lh "$L_PATH"
 
 echo "---------------------------------------------------"
 
-
-
-\# 5. КОПИРУЕМ БОТА
+# 5. КОПИРУЕМ БОТА
 
 echo "🤖 Копирую бота..."
 
 cp /workspace/installer/bot.py /workspace/bot.py
 
-cp /workspace/installer/\*.json /workspace/ 2>/dev/null
+cp /workspace/installer/*.json /workspace/ 2>/dev/null
 
-\[ -d "/workspace/installer/wildcards" ] \&\& cp -r "/workspace/installer/wildcards" "/workspace/ComfyUI/"
+[ -d "/workspace/installer/wildcards" ] && cp -r "/workspace/installer/wildcards" "/workspace/ComfyUI/"
 
-
-
-\# 6. ПЕРЕЗАПУСК
+# 6. ПЕРЕЗАПУСК
 
 echo "🔄 Убиваю процессы..."
 
@@ -1072,25 +904,17 @@ pkill -f "bot.py"
 
 sleep 5
 
-
-
 echo "🤖 Старт Бота..."
 
-nohup $VENV\_PYTHON /workspace/bot.py > /workspace/bot.log 2>\&1 \&
-
-
+nohup $VENV_PYTHON /workspace/bot.py > /workspace/bot.log 2>&1 &
 
 echo "🚀 Старт ComfyUI..."
 
 cd /workspace/ComfyUI
 
-$VENV\_PYTHON main.py --listen 0.0.0.0 --port 3000
+$VENV_PYTHON main.py --listen 0.0.0.0 --port 3000
 
-
-
-
-
-=== ENVIRONMENT \& PORTS ===
+=== ENVIRONMENT & PORTS ===
 
 Ports:
 
@@ -1102,87 +926,61 @@ Ports:
 
 \- 8083: Gallery
 
-
-
 Variables (.env logic):
 
-\- RUNPOD\_ID: Auto-detected
+\- RUNPOD_ID: Auto-detected
 
-\- COMFY\_PORT: 3000
+\- COMFY_PORT: 3000
 
-\- MODELS\_PATH: /workspace/ComfyUI/models/loras
+\- MODELS_PATH: /workspace/ComfyUI/models/loras
 
 ###### -Container image: smyshnikof/comfyui:base-torch2.8.0-cu128
 
 ###### -Container Start Command:
 
-&nbsp;
-
-bash -c "rm -rf /workspace/installer; git clone https://github.com/graffgrey87/NeuroGraph.git /workspace/installer; (while ! curl -s http://localhost:3000 > /dev/null; do sleep 10; done; echo '✅ ComfyUI detected! Waiting 30s...'; sleep 30; bash /workspace/installer/install.sh) \& /start.sh"
-
-
+bash -c "rm -rf /workspace/installer; git clone https://github.com/graffgrey87/NeuroGraph.git /workspace/installer; (while ! curl -s http://localhost:3000 > /dev/null; do sleep 10; done; echo '✅ ComfyUI detected! Waiting 30s...'; sleep 30; bash /workspace/installer/install.sh) & /start.sh"
 
 ###### \-Environment variables:
 
+HF_TOKEN
 
+CIVITAI_API_TOKEN
 
-HF\_TOKEN               
+TIME_ZONE               Etc/UTC
 
+INSTALL_SAGEATTENTION   True
 
+JUPYTER_PASSWORD        n0d1esbdqbxkz3f1xnwi
 
-CIVITAI\_API\_TOKEN    
+TG_TOKEN
 
+ADMIN_ID                386074947
 
+=== KNOWN ISSUES & FIXES ===
 
-TIME\_ZONE               Etc/UTC
+1\. Проблема: Windows paths ("") в JSON воркфлоу ломают загрузку на Linux.
 
+   Решение: Функция fix_paths_for_linux в bot.py обязательна.
 
+2\. Проблема: Telegram падает при отправке символов < > в режиме parse_mode="HTML".
 
-INSTALL\_SAGEATTENTION   True
-
-
-
-JUPYTER\_PASSWORD        n0d1esbdqbxkz3f1xnwi
-
-
-
-TG\_TOKEN              
-
-
-
-ADMIN\_ID                386074947
-
-
-
-
-
-=== KNOWN ISSUES \& FIXES ===
-
-1\. Проблема: Windows paths ("\\") в JSON воркфлоу ломают загрузку на Linux.
-
-&nbsp;  Решение: Функция fix\_paths\_for\_linux в bot.py обязательна.
-
-2\. Проблема: Telegram падает при отправке символов < > в режиме parse\_mode="HTML".
-
-&nbsp;  Решение: Функция html.escape() для текста промпта.
+   Решение: Функция html.escape() для текста промпта.
 
 3\. Проблема: RunPod при перезагрузке очищает pip пакеты.
 
-&nbsp;  Решение: Скрипт install.sh должен запускаться при старте пода.
-
-
+   Решение: Скрипт install.sh должен запускаться при старте пода.
 
 === WORKFLOW CONFIGURATION ===
 
 Mapping:
 
-\- "edit": workflow\_api.json (Requires Image Load)
+\- "edit": workflow_api.json (Requires Image Load)
 
-\- "gen": workflow\_gen.json (Text to Image)
+\- "gen": workflow_gen.json (Text to Image)
 
 Node IDs (Common):
 
-\- Seed: "EasySeed" 
+\- Seed: "EasySeed"
 
 \- Lora Loader: "Power Lora Loader (rgthree)"
 
