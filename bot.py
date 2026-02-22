@@ -219,14 +219,13 @@ def get_main_kb(uid):
     
     # 💡 ФОРМИРОВАНИЕ ССЫЛКИ С ПАМЯТЬЮ
     final_url = WEBAPP_URL
-    if d['flux_store']:
-        try:
-            init_data = dict(d['flux_store'])
-            init_data['_uid'] = str(uid)
-            json_str = json.dumps(init_data, separators=(',', ':'))
-            b64_str = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('utf-8').rstrip("=")
-            final_url = f"{WEBAPP_URL}?init={b64_str}"
-        except: pass
+    try:
+        init_data = dict(d['flux_store']) if d['flux_store'] else {}
+        init_data['_uid'] = str(uid)
+        json_str = json.dumps(init_data, separators=(',', ':'))
+        b64_str = base64.urlsafe_b64encode(json_str.encode('utf-8')).decode('utf-8').rstrip("=")
+        final_url = f"{WEBAPP_URL}?init={b64_str}"
+    except: pass
 
     kb = [
         [KeyboardButton("🎛 ОТКРЫТЬ ПУЛЬТ (Flux)", web_app=WebAppInfo(url=final_url))],
@@ -374,7 +373,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: 
                 pass # Просто идем дальше
         d['msg_ids'] = []
-        m = await update.message.reply_text("🧹", reply_markup=get_main_kb(uid))
+        m = await context.bot.send_message(uid, "🧹 Чат очищен", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
     elif text == "🚀 ГЕНЕРАЦИЯ":
@@ -499,17 +498,20 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
 
                 msg_type = msg.get("type", "")
 
-                if msg_type == "progress" and msg.get("data", {}).get("prompt_id") == pid:
-                    step = msg["data"].get("value", 0)
-                    max_steps = msg["data"].get("max", 1)
-                    pct = int(step / max_steps * 100) if max_steps > 0 else 0
-                    now = time.time()
-                    if status_msg and (now - last_update >= 2 or step == max_steps):
-                        try:
-                            progress_text = f"🎬 {batch_label} | {step}/{max_steps} ({pct}%)" if batch_label else f"🎬 {step}/{max_steps} ({pct}%)"
-                            await status_msg.edit_text(progress_text, reply_markup=stop_kb())
-                            last_update = now
-                        except: pass
+                if msg_type == "progress":
+                    pd = msg.get("data", {})
+                    # Принимаем progress если prompt_id совпадает ИЛИ отсутствует
+                    if pd.get("prompt_id", pid) == pid:
+                        step = pd.get("value", 0)
+                        max_steps = pd.get("max", 1)
+                        pct = int(step / max_steps * 100) if max_steps > 0 else 0
+                        now = time.time()
+                        if status_msg and (now - last_update >= 2 or step == max_steps):
+                            try:
+                                progress_text = f"🎬 {batch_label} | {step}/{max_steps} ({pct}%)" if batch_label else f"🎬 {step}/{max_steps} ({pct}%)"
+                                await status_msg.edit_text(progress_text, reply_markup=stop_kb())
+                                last_update = now
+                            except: pass
 
                 elif msg_type == "executed" and msg.get("data", {}).get("prompt_id") == pid:
                     completed = True

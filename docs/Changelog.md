@@ -2,6 +2,19 @@
 
 ---
 
+## 13. Исправление багов по результатам тестирования (2026-02-22)
+
+- Исправить race condition в `run_workflow`: кеширование history через `cached_history`, retry 10×1s
+- Исправить передачу `_uid` в WebApp: uid теперь передаётся всегда, не только при наличии `flux_store`
+- Исправить очистку чата: `send_message` вместо `reply_text` на удалённое сообщение
+- Ослабить проверку `prompt_id` в WS progress event — ComfyUI не всегда включает его
+- Пропускать бинарные WS-фреймы (preview) через `isinstance(raw, bytes)`
+- Добавить кнопку `💾 Files` (порт 8081) в `get_links_kb`
+- Добавить `PYTHONUNBUFFERED=1` в `install.sh` для bot.py
+- Обернуть `send_photo` в try/except для отказоустойчивости
+
+---
+
 ## 12. Реализация задач среднего приоритета (2026-02-22)
 
 - Добавить проверку здоровья ComfyUI (`check_comfy_health`) перед генерацией
