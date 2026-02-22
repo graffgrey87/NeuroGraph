@@ -467,6 +467,7 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
     pid = res['prompt_id']
     ws_url = f"ws://{COMFY_SERVER}/ws?clientId={CLIENT_ID}"
     completed = False
+    cached_history = None  # сохраняем history при обнаружении
 
     # --- WebSocket progress tracking ---
     try:
@@ -483,6 +484,7 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                 except asyncio.TimeoutError:
                     h = get_history(pid)
                     if pid in h:
+                        cached_history = h
                         completed = True
                         break
                     continue
@@ -527,15 +529,17 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                 return False, f"⏰ Таймаут ({GEN_TIMEOUT}s)", None
             h = get_history(pid)
             if pid in h:
+                cached_history = h
                 completed = True
                 break
             await asyncio.sleep(2)
 
     if not completed:
         # Финальная проверка через history
-        for _ in range(10):
+        for _ in range(15):
             h = get_history(pid)
             if pid in h:
+                cached_history = h
                 completed = True
                 break
             await asyncio.sleep(2)
@@ -543,13 +547,15 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
     if not completed:
         return False, "❌ Генерация не завершилась", None
 
-    # --- Получение результата ---
+    # --- Получение результата (используем cached_history) ---
     try:
-        h = get_history(pid)
-        if pid not in h:
+        if not cached_history or pid not in cached_history:
+            # последняя попытка
+            cached_history = get_history(pid)
+        if pid not in cached_history:
             return False, "❌ Результат не найден в history", None
         
-        out = h[pid].get('outputs', {})
+        out = cached_history[pid].get('outputs', {})
         if not out:
             return False, "❌ Нет outputs в результате", None
 
