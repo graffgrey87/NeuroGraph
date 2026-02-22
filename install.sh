@@ -195,7 +195,7 @@ echo "🌐 WebApp..."
 nohup $VENV_PYTHON /workspace/webapp_server.py > /workspace/webapp.log 2>&1 &
 
 echo "🤖 Бот..."
-nohup $VENV_PYTHON /workspace/bot.py > /workspace/bot.log 2>&1 &
+PYTHONUNBUFFERED=1 nohup $VENV_PYTHON /workspace/bot.py > /workspace/bot.log 2>&1 &
 
 echo "🚀 Старт ComfyUI..."
 cd /workspace/ComfyUI

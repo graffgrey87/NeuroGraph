@@ -547,12 +547,18 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
     if not completed:
         return False, "❌ Генерация не завершилась", None
 
-    # --- Получение результата (используем cached_history) ---
+    # --- Получение результата (используем cached_history или retry) ---
     try:
         if not cached_history or pid not in cached_history:
-            # последняя попытка
-            cached_history = get_history(pid)
-        if pid not in cached_history:
+            # history может быть не записан сразу после executed — ждём с retry
+            for attempt in range(10):
+                cached_history = get_history(pid)
+                if pid in cached_history:
+                    break
+                print(f"⏳ History not ready, attempt {attempt+1}/10...")
+                await asyncio.sleep(1)
+        if not cached_history or pid not in cached_history:
+            print(f"❌ pid {pid} not found in history after 10 retries")
             return False, "❌ Результат не найден в history", None
         
         out = cached_history[pid].get('outputs', {})
