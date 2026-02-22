@@ -465,10 +465,65 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
 
     pid = res['prompt_id']
     ws_url = f"ws://{COMFY_SERVER}/ws?clientId={CLIENT_ID}"
-    completed = False
-    cached_history = None  # сохраняем history при обнаружении
 
-    # --- WebSocket progress tracking ---
+    # --- Вспомогательная: получение и обработка результата ---
+    async def _process_result(history_data):
+        try:
+            out = history_data.get('outputs', {})
+            if not out:
+                return False, "❌ Нет outputs в результате", None
+
+            found = False
+            duration = time.time() - start_time
+            
+            used_seed = None
+            for nid_check in ["117", "122"]:
+                if nid_check in wf and "seed" in wf[nid_check].get("inputs", {}):
+                    used_seed = wf[nid_check]["inputs"]["seed"]
+                    break
+
+            caption = f"✅ {batch_idx} | ⏱ {duration:.1f}s"
+            if used_seed is not None:
+                caption += f" | 🎲 {used_seed}"
+            if user_prompt:
+                caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
+            else:
+                for nid, dat in out.items():
+                    if 'text' in dat:
+                        val = dat['text']
+                        txt = str(val[0] if isinstance(val, list) else val)[:800]
+                        caption += f"\n\n📝 {html.escape(txt)}"
+                        break
+
+            for nid in out:
+                if 'images' in out[nid]:
+                    for img in out[nid]['images']:
+                        try:
+                            idata = get_view(img['filename'], img['subfolder'], img['type'])
+                            m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
+                            track_message(uid, m.message_id)
+                            found = True
+                            d = get_user_data(uid)
+                            d.setdefault('history', []).append({"filename": img['filename'], "subfolder": img['subfolder'], "type": img['type']})
+                            if len(d['history']) > 20: d['history'] = d['history'][-20:]
+                            save_user_data()
+                        except Exception as img_err:
+                            print(f"⚠️ Failed to send image: {img_err}")
+            
+            return found, None, used_seed
+        except Exception as e:
+            print(f"❌ Error processing results: {e}")
+            traceback.print_exc()
+            return False, f"❌ Ошибка обработки: {e}", None
+
+    # --- Вспомогательная: проверка history и возврат результата ---
+    def _check_history():
+        h = get_history(pid)
+        if pid in h:
+            return h[pid]
+        return None
+
+    # --- Основной цикл: WebSocket с fallback на polling ---
     try:
         async with websockets.connect(ws_url, close_timeout=2) as ws:
             last_update = 0
@@ -481,15 +536,14 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                 try:
                     raw = await asyncio.wait_for(ws.recv(), timeout=5)
                 except asyncio.TimeoutError:
-                    h = get_history(pid)
-                    if pid in h:
-                        cached_history = h
-                        completed = True
-                        break
+                    # Каждые 5 сек проверяем history напрямую
+                    result_data = _check_history()
+                    if result_data:
+                        return await _process_result(result_data)
                     continue
 
                 if isinstance(raw, bytes):
-                    continue  # бинарные фреймы (preview) пропускаем
+                    continue
 
                 try:
                     msg = json.loads(raw)
@@ -500,7 +554,6 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
 
                 if msg_type == "progress":
                     pd = msg.get("data", {})
-                    # Принимаем progress если prompt_id совпадает ИЛИ отсутствует
                     if pd.get("prompt_id", pid) == pid:
                         step = pd.get("value", 0)
                         max_steps = pd.get("max", 1)
@@ -508,14 +561,19 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                         now = time.time()
                         if status_msg and (now - last_update >= 2 or step == max_steps):
                             try:
-                                progress_text = f"🎬 {batch_label} | {step}/{max_steps} ({pct}%)" if batch_label else f"🎬 {step}/{max_steps} ({pct}%)"
+                                progress_text = f"🎬 {batch_label} | {step}/{max_steps} ({pct}%)" if batch_label else f"� {step}/{max_steps} ({pct}%)"
                                 await status_msg.edit_text(progress_text, reply_markup=stop_kb())
                                 last_update = now
                             except: pass
 
                 elif msg_type == "executed" and msg.get("data", {}).get("prompt_id") == pid:
-                    completed = True
-                    break
+                    # Генерация завершена — ждём history с retry
+                    for _ in range(30):
+                        result_data = _check_history()
+                        if result_data:
+                            return await _process_result(result_data)
+                        await asyncio.sleep(1)
+                    return False, "❌ History не появился после executed", None
 
                 elif msg_type == "execution_error" and msg.get("data", {}).get("prompt_id") == pid:
                     err_msg = msg.get("data", {}).get("exception_message", "Execution error")
@@ -523,93 +581,17 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
 
     except Exception as ws_err:
         print(f"⚠️ WebSocket failed: {ws_err}, using polling fallback")
-        # Fallback: polling если WebSocket недоступен
-        while True:
-            if time.time() - start_time > GEN_TIMEOUT:
-                try: urllib.request.urlopen(urllib.request.Request(f"http://{COMFY_SERVER}/interrupt", method='POST'))
-                except: pass
-                return False, f"⏰ Таймаут ({GEN_TIMEOUT}s)", None
-            h = get_history(pid)
-            if pid in h:
-                cached_history = h
-                completed = True
-                break
-            await asyncio.sleep(2)
 
-    if not completed:
-        # Финальная проверка через history
-        for _ in range(15):
-            h = get_history(pid)
-            if pid in h:
-                cached_history = h
-                completed = True
-                break
-            await asyncio.sleep(2)
-
-    if not completed:
-        return False, "❌ Генерация не завершилась", None
-
-    # --- Получение результата (используем cached_history или retry) ---
-    try:
-        if not cached_history or pid not in cached_history:
-            # history может быть не записан сразу после executed — ждём с retry
-            for attempt in range(10):
-                cached_history = get_history(pid)
-                if pid in cached_history:
-                    break
-                print(f"⏳ History not ready, attempt {attempt+1}/10...")
-                await asyncio.sleep(1)
-        if not cached_history or pid not in cached_history:
-            print(f"❌ pid {pid} not found in history after 10 retries")
-            return False, "❌ Результат не найден в history", None
-        
-        out = cached_history[pid].get('outputs', {})
-        if not out:
-            return False, "❌ Нет outputs в результате", None
-
-        found = False
-        duration = time.time() - start_time
-        
-        used_seed = None
-        for nid_check in ["117", "122"]:
-            if nid_check in wf and "seed" in wf[nid_check].get("inputs", {}):
-                used_seed = wf[nid_check]["inputs"]["seed"]
-                break
-
-        caption = f"✅ {batch_idx} | ⏱ {duration:.1f}s"
-        if used_seed is not None:
-            caption += f" | 🎲 {used_seed}"
-        if user_prompt:
-            caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
-        else:
-            for nid, dat in out.items():
-                if 'text' in dat:
-                    val = dat['text']
-                    txt = str(val[0] if isinstance(val, list) else val)[:800]
-                    caption += f"\n\n📝 {html.escape(txt)}"
-                    break
-
-        for nid in out:
-            if 'images' in out[nid]:
-                for img in out[nid]['images']:
-                    try:
-                        idata = get_view(img['filename'], img['subfolder'], img['type'])
-                        m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
-                        track_message(uid, m.message_id)
-                        found = True
-                        # 💾 Сохраняем в историю
-                        d = get_user_data(uid)
-                        d.setdefault('history', []).append({"filename": img['filename'], "subfolder": img['subfolder'], "type": img['type']})
-                        if len(d['history']) > 20: d['history'] = d['history'][-20:]
-                        save_user_data()
-                    except Exception as img_err:
-                        print(f"⚠️ Failed to send image: {img_err}")
-        
-        return found, None, used_seed
-    except Exception as result_err:
-        print(f"❌ Error processing results: {result_err}")
-        traceback.print_exc()
-        return False, f"❌ Ошибка обработки: {result_err}", None
+    # --- Fallback: polling без WebSocket ---
+    while True:
+        if time.time() - start_time > GEN_TIMEOUT:
+            try: urllib.request.urlopen(urllib.request.Request(f"http://{COMFY_SERVER}/interrupt", method='POST'))
+            except: pass
+            return False, f"⏰ Таймаут ({GEN_TIMEOUT}s)", None
+        result_data = _check_history()
+        if result_data:
+            return await _process_result(result_data)
+        await asyncio.sleep(2)
 
 def stop_kb():
     return InlineKeyboardMarkup([[InlineKeyboardButton("⛔ СТОП", callback_data="stop_gen")]])
