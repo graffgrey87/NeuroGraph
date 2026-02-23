@@ -255,16 +255,27 @@ async def download_file(
             line_str = line.decode('utf-8', errors='ignore')
             # Парсинг вывода aria2c вида:
             # [#12345 1.2GiB/4.5GiB(26%) CN:16 DL:102MiB]
-            if on_progress and "%" in line_str and ("GiB" in line_str or "MiB" in line_str):
-                now = time.time()
-                if now - last_report_time >= 3.0:  # обновляем прогресс-бар раз в 3 сек
+            now = time.time()
+            if on_progress and now - last_report_time >= 3.0:
+                if "%" in line_str and ("GiB" in line_str or "MiB" in line_str or "KiB" in line_str):
                     match = re.search(r'\((\d+)%\)', line_str)
                     if match:
                         percent = int(match.group(1))
-                        # Если не знаем точный размер, эмулируем "скачано/всего" через проценты
                         await on_progress(percent, 100, filename)
                         last_report_time = now
+                elif "DL:" in line_str or "OK" in line_str:
+                    # Если нет точных %, но загрузка идёт, шлем 0/0 для отображения скачанных MB
+                    match_dl = re.search(r'([0-9.]+[KMG]?iB)(/([0-9.]+[KMG]?iB))?', line_str)
+                    if match_dl:
+                        # Если можем парсить байты, было бы здорово, но упростим:
+                        # просто триггерим обновление, чтобы показать, что процесс жив
+                        # Эмулируем 50% если размер неизвестен, но файл качается
+                        await on_progress(50, 100, filename) 
+                        last_report_time = now
         
+        # По завершению всегда 100%
+        if on_progress:
+            await on_progress(100, 100, filename)
         await process.wait()
         if process.returncode != 0:
             raise RuntimeError(f"aria2c error code: {process.returncode}")

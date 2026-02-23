@@ -1065,25 +1065,25 @@ async def _run_preset_download(context, uid, preset_key, status_msg):
             pct = int(dl_bytes / total_bytes * 100)
             bar = _progress_bar(pct)
             text = (
-                f"📥 **{info['name']}**\n"
+                f"📥 <b>{info['name']}</b>\n"
                 f"📦 {cur_file}/{total_files} | {filename}\n"
                 f"{bar} {pct}%"
             )
         else:
             mb = dl_bytes / (1024 * 1024)
             text = (
-                f"📥 **{info['name']}**\n"
+                f"📥 <b>{info['name']}</b>\n"
                 f"📦 {cur_file}/{total_files} | {filename}\n"
                 f"💾 {mb:.0f} MB"
             )
         try:
-            await status_msg.edit_text(text, reply_markup=stop_kb, parse_mode="Markdown")
+            await status_msg.edit_text(text, reply_markup=stop_kb, parse_mode="HTML")
         except: pass
     
     try:
         result = await download_preset(preset_key, on_progress=on_progress, uid=uid)
         
-        parts = [f"✅ **{info['name']}** — готово!\n"]
+        parts = [f"✅ <b>{info['name']}</b> — готово!\n"]
         if result["downloaded"]:
             parts.append(f"📥 Скачано: {len(result['downloaded'])}")
         if result["skipped"]:
@@ -1093,7 +1093,7 @@ async def _run_preset_download(context, uid, preset_key, status_msg):
             for err in result["failed"][:5]:
                 parts.append(f"   • {err[:80]}")
         
-        await status_msg.edit_text("\n".join(parts), parse_mode="Markdown")
+        await status_msg.edit_text("\n".join(parts), parse_mode="HTML")
     except Exception as e:
         try:
             await status_msg.edit_text(f"❌ Ошибка: {e}")
