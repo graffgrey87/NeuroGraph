@@ -125,7 +125,8 @@ def build_preset(name: str, model_key: str, vae_key: str, encoder_key: str) -> s
     if not model or not vae or not encoder:
         return None
     
-    key = f"CUSTOM_{name.upper().replace(' ', '_')}"
+    import uuid
+    key = f"CUST_{uuid.uuid4().hex[:8]}"
     files = []
     for comp in [model, vae, encoder]:
         files.append({

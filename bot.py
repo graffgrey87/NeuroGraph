@@ -368,8 +368,8 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_user_data()
         if key:
             m = await update.message.reply_text(
-                f"✅ Пресет **{preset_name}** собран!\n🔑 `{key}`\n\nСкачать: /dl → Custom",
-                parse_mode="Markdown", reply_markup=get_main_kb(uid)
+                f"✅ Пресет <b>{preset_name}</b> собран!\n🔑 <code>{key}</code>\n\nСкачать: /dl → Custom",
+                parse_mode="HTML", reply_markup=get_main_kb(uid)
             )
         else:
             m = await update.message.reply_text("❌ Ошибка сборки", reply_markup=get_main_kb(uid))
@@ -797,7 +797,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         n_files = len(info.get('files', []))
         text_msg = (
-            f"📦 **{info['name']}**\n"
+            f"📦 <b>{info['name']}</b>\n"
             f"📂 {n_files} файлов, {info.get('size', '?')}\n"
             f"🏷 {info.get('category', 'Custom')}"
         )
@@ -805,7 +805,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬇️ Скачать", callback_data=f"dlconfirm_{key}")],
             [InlineKeyboardButton("🔙 Назад", callback_data=f"dlcat_{info.get('category','Custom')}")]
         ])
-        await q.message.edit_text(text_msg, reply_markup=kb, parse_mode="Markdown")
+        await q.message.edit_text(text_msg, reply_markup=kb, parse_mode="HTML")
 
     elif q.data.startswith("dlconfirm_"):
         key = q.data[10:]
@@ -814,9 +814,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("❌ Пресет не найден")
             return
         await q.message.edit_text(
-            f"🚀 Скачиваю: **{info['name']}**\n📦 Подготовка...",
+            f"🚀 Скачиваю: <b>{info['name']}</b>\n📦 Подготовка...",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⛔ Отмена", callback_data="dlcancel")]]),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         asyncio.create_task(_run_preset_download(context, uid, key, q.message))
 
