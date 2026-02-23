@@ -1,6 +1,13 @@
 import websockets, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from fast_downloader import (
+    load_presets, save_presets, add_preset as fd_add_preset,
+    get_categories_with_counts, get_presets_by_category, get_preset_info,
+    download_preset, download_url as fd_download_url, download_file,
+    download_cancel_flags,
+    get_components, get_component, build_preset as fd_build_preset
+)
 
 # ==========================================
 # ⚙️ CONFIG
@@ -47,6 +54,7 @@ def load_user_data():
                 user_data[uid].setdefault('awaiting_lora', None)
                 user_data[uid].setdefault('awaiting_custom_batch', False)
                 user_data[uid].setdefault('awaiting_dataset_name', False)
+                user_data[uid].setdefault('build_state', None)
                 if 'loras' in user_data[uid] and isinstance(user_data[uid]['loras'], dict):
                     user_data[uid]['loras'] = {int(k): v for k, v in user_data[uid]['loras'].items()}
             print(f"💾 Loaded {len(user_data)} user(s) from disk")
@@ -89,7 +97,8 @@ def get_user_data(uid):
             'dataset_name': 'Batch', 'msg_ids': [], 'history': [], 'presets': {},
             'loras': {1:0.0, 2:0.0, 3:0.0, 4:0.0}, 
             'flux_store': None,
-            'awaiting_lora': None, 'awaiting_custom_batch': False, 'awaiting_dataset_name': False
+            'awaiting_lora': None, 'awaiting_custom_batch': False, 'awaiting_dataset_name': False,
+            'build_state': None
         }
     return user_data[uid]
 
@@ -232,7 +241,8 @@ def get_main_kb(uid):
         [KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
         [KeyboardButton(f"🔄 WF: {WORKFLOWS[d['wf']]['name']}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
         [KeyboardButton(f"{ico} Режим: {d['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
-        [KeyboardButton(f"🏷 Сет: {d['dataset_name']}"), KeyboardButton("📁 История"), KeyboardButton("🌐 Ссылки")]
+        [KeyboardButton(f"🏷 Сет: {d['dataset_name']}"), KeyboardButton("📁 История"), KeyboardButton("🌐 Ссылки")],
+        [KeyboardButton("📥 Загрузчик")]
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -344,6 +354,27 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: m = await update.message.reply_text("Введите число", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
         return
+
+    # 🧱 BUILD: ожидание имени пресета
+    bs = d.get('build_state')
+    if bs and bs.get('step') == 'name':
+        preset_name = text.strip()
+        if not preset_name or len(preset_name) > 30:
+            m = await update.message.reply_text("❌ Имя от 1 до 30 символов", reply_markup=get_main_kb(uid))
+            track_message(uid, m.message_id)
+            return
+        key = fd_build_preset(preset_name, bs['model'], bs['vae'], bs['encoder'])
+        d['build_state'] = None
+        save_user_data()
+        if key:
+            m = await update.message.reply_text(
+                f"✅ Пресет **{preset_name}** собран!\n🔑 `{key}`\n\nСкачать: /dl → Custom",
+                parse_mode="Markdown", reply_markup=get_main_kb(uid)
+            )
+        else:
+            m = await update.message.reply_text("❌ Ошибка сборки", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
+        return
     
     if d.get('awaiting_dataset_name'):
         d['dataset_name'] = text
@@ -403,6 +434,9 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🌐 Ссылки":
         m = await update.message.reply_text("Links:", reply_markup=get_links_kb())
         track_message(uid, m.message_id)
+
+    elif text == "📥 Загрузчик":
+        await cmd_dl(update, context)
 
     elif text == "📁 История":
         hist = d.get('history', [])
@@ -727,16 +761,395 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif q.data in ["close_links", "close_lora"]: 
         await q.message.delete()
-        # 💡 ВОЗВРАЩАЕМ МЕНЮ, ЕСЛИ ПРОПАЛО
         m = await context.bot.send_message(uid, "✅ Меню активно", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
+
+    # --- DOWNLOADER CALLBACKS ---
+    elif q.data.startswith("dlcat_"):
+        cat = q.data[6:]
+        presets_list = get_presets_by_category(cat)
+        if not presets_list:
+            await q.message.edit_text("📭 Нет пресетов в этой категории")
+            return
+        kb = []
+        for i in range(0, len(presets_list), 2):
+            row = []
+            for key, info in presets_list[i:i+2]:
+                row.append(InlineKeyboardButton(
+                    f"{info['name']} {info.get('size','')}",
+                    callback_data=f"dlpreset_{key}"
+                ))
+            kb.append(row)
+        kb.append([InlineKeyboardButton("🔙 Назад", callback_data="dlback")])
+        cats_data = load_presets().get("categories", {})
+        icon = cats_data.get(cat, {}).get("icon", "📦")
+        await q.message.edit_text(
+            f"{icon} **{cat}** — выбери пресет:",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown"
+        )
+
+    elif q.data.startswith("dlpreset_"):
+        key = q.data[9:]
+        info = get_preset_info(key)
+        if not info:
+            await q.message.edit_text("❌ Пресет не найден")
+            return
+        n_files = len(info.get('files', []))
+        text_msg = (
+            f"📦 **{info['name']}**\n"
+            f"📂 {n_files} файлов, {info.get('size', '?')}\n"
+            f"🏷 {info.get('category', 'Custom')}"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬇️ Скачать", callback_data=f"dlconfirm_{key}")],
+            [InlineKeyboardButton("🔙 Назад", callback_data=f"dlcat_{info.get('category','Custom')}")]
+        ])
+        await q.message.edit_text(text_msg, reply_markup=kb, parse_mode="Markdown")
+
+    elif q.data.startswith("dlconfirm_"):
+        key = q.data[10:]
+        info = get_preset_info(key)
+        if not info:
+            await q.message.edit_text("❌ Пресет не найден")
+            return
+        await q.message.edit_text(
+            f"🚀 Скачиваю: **{info['name']}**\n📦 Подготовка...",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⛔ Отмена", callback_data="dlcancel")]]),
+            parse_mode="Markdown"
+        )
+        asyncio.create_task(_run_preset_download(context, uid, key, q.message))
+
+    elif q.data == "dlcancel":
+        download_cancel_flags[uid] = True
+        try:
+            await q.message.edit_text("⛔ Отменяю загрузку...")
+        except: pass
+
+    elif q.data == "dlback":
+        await _show_dl_menu(q.message, edit=True)
+
+    # --- BUILD (CONSTRUCTOR) CALLBACKS ---
+    elif q.data.startswith("bm_"):
+        # Выбрана модель → показать VAE
+        model_key = q.data[3:]
+        d.setdefault('build_state', {})['model'] = model_key
+        d['build_state']['step'] = 'vae'
+        comp = get_component('models', model_key)
+        model_name = comp['name'] if comp else model_key
+        
+        vae_list = get_components('vae')
+        kb = []
+        for i in range(0, len(vae_list), 2):
+            row = []
+            for vk, vi in vae_list[i:i+2]:
+                label = vi['name'][:25]
+                row.append(InlineKeyboardButton(label, callback_data=f"bv_{vk}"))
+            kb.append(row)
+        kb.append([InlineKeyboardButton("❌ Отмена", callback_data="bcancel")])
+        await q.message.edit_text(
+            f"🧱 **Конструктор**\n✅ Модель: {model_name}\n\nШаг 2/4: Выбери **VAE**:",
+            reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
+        )
+
+    elif q.data.startswith("bv_"):
+        # Выбран VAE → показать энкодеры
+        vae_key = q.data[3:]
+        d.setdefault('build_state', {})['vae'] = vae_key
+        d['build_state']['step'] = 'encoder'
+        comp = get_component('vae', vae_key)
+        vae_name = comp['name'] if comp else vae_key
+        model_comp = get_component('models', d['build_state'].get('model', ''))
+        model_name = model_comp['name'] if model_comp else '?'
+        
+        enc_list = get_components('text_encoders')
+        kb = []
+        for i in range(0, len(enc_list), 2):
+            row = []
+            for ek, ei in enc_list[i:i+2]:
+                label = ei['name'][:25]
+                row.append(InlineKeyboardButton(label, callback_data=f"be_{ek}"))
+            kb.append(row)
+        kb.append([InlineKeyboardButton("❌ Отмена", callback_data="bcancel")])
+        await q.message.edit_text(
+            f"🧱 **Конструктор**\n✅ Модель: {model_name}\n✅ VAE: {vae_name}\n\nШаг 3/4: Выбери **энкодер**:",
+            reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
+        )
+
+    elif q.data.startswith("be_"):
+        # Выбран энкодер → запросить имя
+        enc_key = q.data[3:]
+        d.setdefault('build_state', {})['encoder'] = enc_key
+        d['build_state']['step'] = 'name'
+        
+        model_comp = get_component('models', d['build_state'].get('model', ''))
+        vae_comp = get_component('vae', d['build_state'].get('vae', ''))
+        enc_comp = get_component('text_encoders', enc_key)
+        
+        await q.message.edit_text(
+            f"🧱 **Конструктор**\n"
+            f"✅ Модель: {model_comp['name'] if model_comp else '?'}\n"
+            f"✅ VAE: {vae_comp['name'] if vae_comp else '?'}\n"
+            f"✅ Энкодер: {enc_comp['name'] if enc_comp else '?'}\n\n"
+            f"Шаг 4/4: **Введи имя** пресета:",
+            parse_mode="Markdown"
+        )
+
+    elif q.data == "bcancel":
+        d['build_state'] = None
+        try:
+            await q.message.edit_text("❌ Конструктор отменён")
+        except: pass
+
+# ==========================================
+# 📥 DOWNLOADER COMMANDS
+# ==========================================
+
+async def _show_dl_menu(message, edit=False):
+    """Показывает главное меню загрузчика (категории)."""
+    cats = get_categories_with_counts()
+    if not cats:
+        text = "📭 Пресеты не найдены. Проверь presets.json"
+        if edit:
+            await message.edit_text(text)
+        else:
+            await message.reply_text(text)
+        return
+    
+    kb = []
+    for i in range(0, len(cats), 3):
+        row = []
+        for cat, icon, count in cats[i:i+3]:
+            row.append(InlineKeyboardButton(f"{icon} {cat} ({count})", callback_data=f"dlcat_{cat}"))
+        kb.append(row)
+    
+    text = "📥 **Загрузчик моделей**\nВыбери категорию:"
+    if edit:
+        await message.edit_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    else:
+        return await message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def cmd_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /dl — открывает меню загрузчика."""
+    if not await check_auth(update): return
+    uid = update.effective_user.id
+    track_message(uid, update.message.message_id)
+    m = await _show_dl_menu(update.message)
+    if m:
+        track_message(uid, m.message_id)
+
+
+async def cmd_add_preset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/add_preset <Имя> <URL> <folder> — добавляет кастомный пресет."""
+    if not await check_auth(update): return
+    uid = update.effective_user.id
+    track_message(uid, update.message.message_id)
+    
+    args = context.args
+    if not args or len(args) < 3:
+        m = await update.message.reply_text(
+            "📝 Формат:\n`/add_preset Имя URL папка`\n\n"
+            "Папки: `diffusion_models`, `text_encoders`, `vae`, `loras`, `checkpoints`, `upscale_models`\n\n"
+            "Пример:\n`/add_preset MyLora https://hf.co/.../lora.safetensors loras`",
+            parse_mode="Markdown",
+            reply_markup=get_main_kb(uid)
+        )
+        track_message(uid, m.message_id)
+        return
+    
+    name = args[0]
+    url = args[1]
+    folder = args[2] if len(args) > 2 else "diffusion_models"
+    
+    valid_folders = ["diffusion_models", "text_encoders", "vae", "loras", 
+                     "checkpoints", "upscale_models", "controlnet", "latent_upscale_models"]
+    if folder not in valid_folders:
+        m = await update.message.reply_text(
+            f"❌ Неверная папка: `{folder}`\n\nДоступные: {', '.join(f'`{f}`' for f in valid_folders)}",
+            parse_mode="Markdown", reply_markup=get_main_kb(uid)
+        )
+        track_message(uid, m.message_id)
+        return
+    
+    if not url.startswith("http"):
+        m = await update.message.reply_text("❌ URL должен начинаться с http", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
+        return
+    
+    key = f"CUSTOM_{name.upper().replace(' ', '_')}"
+    fd_add_preset(key, name, "Custom", [{"url": url, "folder": folder, "filename": None}])
+    
+    m = await update.message.reply_text(
+        f"✅ Пресет добавлен!\n📦 {name}\n🔑 `{key}`\n📂 {folder}",
+        parse_mode="Markdown", reply_markup=get_main_kb(uid)
+    )
+    track_message(uid, m.message_id)
+
+
+async def cmd_dl_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/dl_url <URL> [folder] — скачивает по прямой ссылке."""
+    if not await check_auth(update): return
+    uid = update.effective_user.id
+    track_message(uid, update.message.message_id)
+    
+    args = context.args
+    if not args:
+        m = await update.message.reply_text(
+            "📝 Формат: `/dl_url URL [папка]`\nПо умолчанию: `diffusion_models`",
+            parse_mode="Markdown", reply_markup=get_main_kb(uid)
+        )
+        track_message(uid, m.message_id)
+        return
+    
+    url = args[0]
+    folder = args[1] if len(args) > 1 else "diffusion_models"
+    
+    msg = await update.message.reply_text(
+        f"📥 Скачиваю...\n🔗 `{url[:60]}...`",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⛔ Отмена", callback_data="dlcancel")]])
+    )
+    track_message(uid, msg.message_id)
+    
+    last_edit = [0.0]
+    
+    async def on_progress(dl_bytes, total_bytes, filename):
+        now = time.time()
+        if now - last_edit[0] < 3:
+            return
+        last_edit[0] = now
+        if total_bytes > 0:
+            pct = int(dl_bytes / total_bytes * 100)
+            mb_dl = dl_bytes / (1024 * 1024)
+            mb_total = total_bytes / (1024 * 1024)
+            bar = _progress_bar(pct)
+            text = f"📥 {filename}\n{bar} {pct}%\n💾 {mb_dl:.0f} / {mb_total:.0f} MB"
+        else:
+            mb_dl = dl_bytes / (1024 * 1024)
+            text = f"📥 {filename}\n💾 {mb_dl:.0f} MB"
+        try:
+            await msg.edit_text(text, reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("⛔ Отмена", callback_data="dlcancel")]]
+            ))
+        except: pass
+    
+    try:
+        status, filename = await fd_download_url(url, folder, on_progress=on_progress, uid=uid)
+        if status == "SKIP":
+            await msg.edit_text(f"⏭️ Уже существует: `{filename}`", parse_mode="Markdown")
+        else:
+            await msg.edit_text(f"✅ Скачано: `{filename}`", parse_mode="Markdown")
+    except RuntimeError as e:
+        await msg.edit_text(f"❌ {e}")
+
+
+async def _run_preset_download(context, uid, preset_key, status_msg):
+    """Фоновая задача: скачивание пресета с обновлением прогресса."""
+    info = get_preset_info(preset_key)
+    if not info:
+        try: await status_msg.edit_text("❌ Пресет не найден")
+        except: pass
+        return
+    
+    last_edit = [0.0]
+    stop_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⛔ Отмена", callback_data="dlcancel")]])
+    
+    async def on_progress(cur_file, total_files, dl_bytes, total_bytes, filename):
+        now = time.time()
+        if now - last_edit[0] < 3:
+            return
+        last_edit[0] = now
+        
+        if total_bytes > 0:
+            pct = int(dl_bytes / total_bytes * 100)
+            bar = _progress_bar(pct)
+            text = (
+                f"📥 **{info['name']}**\n"
+                f"📦 {cur_file}/{total_files} | {filename}\n"
+                f"{bar} {pct}%"
+            )
+        else:
+            mb = dl_bytes / (1024 * 1024)
+            text = (
+                f"📥 **{info['name']}**\n"
+                f"📦 {cur_file}/{total_files} | {filename}\n"
+                f"💾 {mb:.0f} MB"
+            )
+        try:
+            await status_msg.edit_text(text, reply_markup=stop_kb, parse_mode="Markdown")
+        except: pass
+    
+    try:
+        result = await download_preset(preset_key, on_progress=on_progress, uid=uid)
+        
+        parts = [f"✅ **{info['name']}** — готово!\n"]
+        if result["downloaded"]:
+            parts.append(f"📥 Скачано: {len(result['downloaded'])}")
+        if result["skipped"]:
+            parts.append(f"⏭️ Пропущено: {len(result['skipped'])}")
+        if result["failed"]:
+            parts.append(f"❌ Ошибки: {len(result['failed'])}")
+            for err in result["failed"][:5]:
+                parts.append(f"   • {err[:80]}")
+        
+        await status_msg.edit_text("\n".join(parts), parse_mode="Markdown")
+    except Exception as e:
+        try:
+            await status_msg.edit_text(f"❌ Ошибка: {e}")
+        except: pass
+    
+    m = await context.bot.send_message(uid, "✅ Меню активно", reply_markup=get_main_kb(uid))
+    track_message(uid, m.message_id)
+
+
+def _progress_bar(percent: int, length: int = 10) -> str:
+    """Генерирует текстовый прогресс-бар: [█████░░░░░]"""
+    filled = int(length * percent / 100)
+    return "[" + "█" * filled + "░" * (length - filled) + "]"
+
+
+async def cmd_build(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /build — конструктор пресетов из компонентов."""
+    if not await check_auth(update): return
+    uid = update.effective_user.id
+    track_message(uid, update.message.message_id)
+    d = get_user_data(uid)
+    d['build_state'] = {'step': 'model'}
+    
+    models = get_components('models')
+    if not models:
+        m = await update.message.reply_text("📭 Каталог компонентов пуст", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
+        d['build_state'] = None
+        return
+    
+    kb = []
+    for i in range(0, len(models), 2):
+        row = []
+        for mk, mi in models[i:i+2]:
+            label = mi['name'][:25]
+            row.append(InlineKeyboardButton(label, callback_data=f"bm_{mk}"))
+        kb.append(row)
+    kb.append([InlineKeyboardButton("❌ Отмена", callback_data="bcancel")])
+    
+    m = await update.message.reply_text(
+        "🧱 **Конструктор пресетов**\n\nШаг 1/4: Выбери **модель**:",
+        reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
+    )
+    track_message(uid, m.message_id)
+
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler('start', start))
+    app.add_handler(CommandHandler('dl', cmd_dl))
+    app.add_handler(CommandHandler('build', cmd_build))
+    app.add_handler(CommandHandler('add_preset', cmd_add_preset))
+    app.add_handler(CommandHandler('dl_url', cmd_dl_url))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_msg))
-    print(f"✅ Bot v8.3 Started on {RUNPOD_ID}")
+    print(f"✅ Bot v8.4 Started on {RUNPOD_ID}")
     app.run_polling()

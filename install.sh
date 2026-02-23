@@ -107,18 +107,17 @@ wait_batch() {
 }
 
 # ==========================================
-# 🅰️ БОЛЬШИЕ ФАЙЛЫ (последовательно, 16 потоков каждый)
+# 🅰️ CHECKPOINTS / CLIP / VAE → теперь через загрузчик бота (/dl)
 # ==========================================
 echo ""
-echo "━━━ CHECKPOINTS ━━━"
-download_model "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B/resolve/main/flux-2-klein-9b.safetensors?download=true" "flux-2-klein-9b.safetensors" "$CKPT_PATH"
-download_model "https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8/resolve/main/flux-2-klein-9b-fp8.safetensors?download=true" "flux-2-klein-9b-fp8.safetensors" "$CKPT_PATH"
+echo "━━━ CHECKPOINTS / CLIP / VAE — через загрузчик бота ━━━"
+echo "  ℹ️ Используй /dl в Telegram для скачивания моделей"
+# download_model "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B/resolve/main/flux-2-klein-9b.safetensors?download=true" "flux-2-klein-9b.safetensors" "$CKPT_PATH"
+# download_model "https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8/resolve/main/flux-2-klein-9b-fp8.safetensors?download=true" "flux-2-klein-9b-fp8.safetensors" "$CKPT_PATH"
 
-echo ""
-echo "━━━ CLIP & VAE ━━━"
-download_model "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors?download=true" "qwen_3_8b_fp8mixed.safetensors" "$CLIP_PATH"
-download_model "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/resolve/main/split_files/text_encoders/qwen_3_8b.safetensors?download=true" "qwen_3_8b.safetensors" "$CLIP_PATH"
-download_model "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/resolve/main/split_files/vae/flux2-vae.safetensors?download=true" "flux2-vae.safetensors" "$VAE_PATH"
+# download_model "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors?download=true" "qwen_3_8b_fp8mixed.safetensors" "$CLIP_PATH"
+# download_model "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/resolve/main/split_files/text_encoders/qwen_3_8b.safetensors?download=true" "qwen_3_8b.safetensors" "$CLIP_PATH"
+# download_model "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/resolve/main/split_files/vae/flux2-vae.safetensors?download=true" "flux2-vae.safetensors" "$VAE_PATH"
 
 # ==========================================
 # 🅱️ ЛОРЫ — ПАЧКАМИ ПО 4 ПАРАЛЛЕЛЬНО
@@ -179,6 +178,7 @@ echo "✅ Все модели загружены."
 # 5. КОПИРОВАНИЕ И ЗАПУСК
 echo "🤖 Копирую файлы бота..."
 cp /workspace/installer/bot.py /workspace/bot.py
+cp /workspace/installer/fast_downloader.py /workspace/fast_downloader.py
 cp /workspace/installer/webapp_server.py /workspace/webapp_server.py
 cp /workspace/installer/*.json /workspace/ 2>/dev/null
 mkdir -p /workspace/templates
