@@ -601,13 +601,13 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                             except: pass
 
                 elif msg_type == "executed" and msg.get("data", {}).get("prompt_id") == pid:
-                    # Генерация завершена — ждём history с retry
+                    # Генерация завершена — ждём history с увеличенным таймаутом (до 60 секунд)
                     for _ in range(30):
                         result_data = _check_history()
                         if result_data:
                             return await _process_result(result_data)
-                        await asyncio.sleep(1)
-                    return False, "❌ History не появился после executed", None
+                        await asyncio.sleep(2)
+                    return False, "❌ History не появился после executed (таймаут 60с)", None
 
                 elif msg_type == "execution_error" and msg.get("data", {}).get("prompt_id") == pid:
                     err_msg = msg.get("data", {}).get("exception_message", "Execution error")
