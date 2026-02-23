@@ -1,25 +1,25 @@
 {
   "categories": {
     "Wan": {
-      "icon": "🎬"
+      "icon": "\ud83c\udfac"
     },
     "Qwen": {
-      "icon": "🤖"
+      "icon": "\ud83e\udd16"
     },
     "Flux": {
-      "icon": "⚡"
+      "icon": "\u26a1"
     },
     "LTX": {
-      "icon": "🎨"
+      "icon": "\ud83c\udfa8"
     },
     "Z-Image": {
-      "icon": "🖼️"
+      "icon": "\ud83d\uddbc\ufe0f"
     },
     "Audio": {
-      "icon": "🎵"
+      "icon": "\ud83c\udfb5"
     },
     "Custom": {
-      "icon": "📦"
+      "icon": "\ud83d\udce6"
     }
   },
   "presets": {
@@ -1559,7 +1559,7 @@
       "files": [
         {
           "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev-fp8.safetensors",
-          "folder": "checkpoints",
+          "folder": "diffusion_models",
           "filename": null
         },
         {
@@ -1621,7 +1621,7 @@
       "files": [
         {
           "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors",
-          "folder": "checkpoints",
+          "folder": "diffusion_models",
           "filename": null
         },
         {
@@ -1678,7 +1678,7 @@
       "files": [
         {
           "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-distilled-fp8.safetensors",
-          "folder": "checkpoints",
+          "folder": "diffusion_models",
           "filename": null
         },
         {
@@ -1735,7 +1735,7 @@
       "files": [
         {
           "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-distilled.safetensors",
-          "folder": "checkpoints",
+          "folder": "diffusion_models",
           "filename": null
         },
         {
@@ -1844,7 +1844,7 @@
       "files": [
         {
           "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/checkpoints/ace_step_1.5_turbo_aio.safetensors",
-          "folder": "checkpoints",
+          "folder": "diffusion_models",
           "filename": null
         }
       ]
@@ -2236,7 +2236,7 @@
       "ltx_2_19b_dev_fp8": {
         "name": "Ltx 2 19b Dev FP8",
         "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev-fp8.safetensors",
-        "folder": "checkpoints",
+        "folder": "diffusion_models",
         "filename": "ltx-2-19b-dev-fp8.safetensors"
       },
       "lotus_depth_d_v1_1": {
@@ -2248,19 +2248,19 @@
       "ltx_2_19b_dev": {
         "name": "Ltx 2 19b Dev",
         "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors",
-        "folder": "checkpoints",
+        "folder": "diffusion_models",
         "filename": "ltx-2-19b-dev.safetensors"
       },
       "ltx_2_19b_distilled_fp8": {
         "name": "Ltx 2 19b Distilled FP8",
         "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-distilled-fp8.safetensors",
-        "folder": "checkpoints",
+        "folder": "diffusion_models",
         "filename": "ltx-2-19b-distilled-fp8.safetensors"
       },
       "ltx_2_19b_distilled": {
         "name": "Ltx 2 19b Distilled",
         "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-distilled.safetensors",
-        "folder": "checkpoints",
+        "folder": "diffusion_models",
         "filename": "ltx-2-19b-distilled.safetensors"
       },
       "ltx_2_19b_dev_q8_0": {
@@ -2278,7 +2278,7 @@
       "ace_step_1_5_turbo_aio": {
         "name": "Ace Step 1.5 Turbo Aio",
         "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/checkpoints/ace_step_1.5_turbo_aio.safetensors",
-        "folder": "checkpoints",
+        "folder": "diffusion_models",
         "filename": "ace_step_1.5_turbo_aio.safetensors"
       },
       "acestep_v1_5_turbo": {
@@ -2308,13 +2308,13 @@
       "flux_2_klein_9b": {
         "name": "Flux 2 Klein 9b",
         "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B/resolve/main/flux-2-klein-9b.safetensors?download=true",
-        "folder": "checkpoints",
+        "folder": "diffusion_models",
         "filename": "flux-2-klein-9b.safetensors"
       },
       "flux_2_klein_9b_fp8": {
         "name": "Flux 2 Klein 9b FP8",
         "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8/resolve/main/flux-2-klein-9b-fp8.safetensors?download=true",
-        "folder": "checkpoints",
+        "folder": "diffusion_models",
         "filename": "flux-2-klein-9b-fp8.safetensors"
       }
     },
