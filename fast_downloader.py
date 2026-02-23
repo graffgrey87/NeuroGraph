@@ -210,58 +210,66 @@ async def download_file(
         headers["Authorization"] = f"Bearer {hf_token}"
     
     try:
-        # Пробуем aiohttp (быстрее)
-        import aiohttp
-        timeout = aiohttp.ClientTimeout(total=600, connect=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as resp:
-                resp.raise_for_status()
-                total = int(resp.headers.get("content-length", 0))
-                downloaded = 0
-                last_report = 0
-                report_interval = 5 * 1024 * 1024  # 5 MB
+        # Пробуем aria2c (16 потоков) для максимальной скорости
+        import subprocess
+        import re
+        
+        cmd = [
+            "aria2c",
+            "--console-log-level=notice",
+            "--summary-interval=1",
+            "-d", dest_folder,
+            "-o", filename,
+            "-x", "16",
+            "-s", "16",
+            "-j", "16",
+            "-k", "1M"
+        ]
+        if hf_token and "huggingface.co" in url:
+            cmd.extend(["--header", f"Authorization: Bearer {hf_token}"])
+        cmd.append(url)
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT
+        )
+        
+        last_report_time = 0
+        while True:
+            # Проверка отмены
+            if uid and download_cancel_flags.get(uid):
+                process.terminate()
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                raise RuntimeError("⛔ Отменено")
                 
-                with open(filepath, "wb") as f:
-                    async for chunk in resp.content.iter_chunked(1024 * 1024):  # 1 MB
-                        # Проверка отмены
-                        if uid and download_cancel_flags.get(uid):
-                            f.close()
-                            if os.path.exists(filepath):
-                                os.remove(filepath)
-                            raise RuntimeError("⛔ Отменено")
-                        
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        if on_progress and (
-                            downloaded - last_report >= report_interval
-                            or (total > 0 and downloaded >= total)
-                        ):
-                            last_report = downloaded
-                            await on_progress(downloaded, total, filename)
-        
-        return "DOWNLOADED", filename
-        
-    except ImportError:
-        # Fallback на requests (синхронный, но в executor)
-        import requests as req_lib
-        
-        def _sync_download():
-            response = req_lib.get(url, stream=True, headers=headers, timeout=300)
-            response.raise_for_status()
-            total = int(response.headers.get("content-length", 0))
-            downloaded = 0
+            if process.stdout is None:
+                break
+                
+            line = await process.stdout.readline()
+            if not line:
+                break
             
-            with open(filepath, "wb") as f:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-            return total
+            line_str = line.decode('utf-8', errors='ignore')
+            # Парсинг вывода aria2c вида:
+            # [#12345 1.2GiB/4.5GiB(26%) CN:16 DL:102MiB]
+            if on_progress and "%" in line_str and ("GiB" in line_str or "MiB" in line_str):
+                now = time.time()
+                if now - last_report_time >= 3.0:  # обновляем прогресс-бар раз в 3 сек
+                    match = re.search(r'\((\d+)%\)', line_str)
+                    if match:
+                        percent = int(match.group(1))
+                        # Если не знаем точный размер, эмулируем "скачано/всего" через проценты
+                        await on_progress(percent, 100, filename)
+                        last_report_time = now
         
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _sync_download)
+        await process.wait()
+        if process.returncode != 0:
+            raise RuntimeError(f"aria2c error code: {process.returncode}")
+            
         return "DOWNLOADED", filename
+
         
     except Exception as e:
         if os.path.exists(filepath):
