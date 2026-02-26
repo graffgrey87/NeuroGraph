@@ -596,10 +596,13 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                         now = time.time()
                         if status_msg and (now - last_update >= 2 or step == max_steps):
                             try:
-                                progress_text = f"🎬 {batch_label} | {step}/{max_steps} ({pct}%)" if batch_label else f"� {step}/{max_steps} ({pct}%)"
+                                progress_text = f"🎬 {batch_label} | {step}/{max_steps} ({pct}%)" if batch_label else f"⏳ {step}/{max_steps} ({pct}%)"
                                 await status_msg.edit_text(progress_text, reply_markup=stop_kb())
                                 last_update = now
-                            except: pass
+                            except Exception as uerr:
+                                print(f"UPDATE PROGRESS ERROR: {uerr}")
+                    else:
+                        print(f"WS PROGRESS PID MISMATCH: msg pid={pd.get('prompt_id')} vs our pid={pid}")
 
                 elif msg_type == "executed" and msg.get("data", {}).get("prompt_id") == pid:
                     # Генерация завершена — ждём history с увеличенным таймаутом (до 60 секунд)
