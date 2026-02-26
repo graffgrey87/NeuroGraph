@@ -585,6 +585,7 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                     continue
 
                 msg_type = msg.get("type", "")
+                logging.error(f"WS RAW TYPE: {msg_type} | PID: {pid} | Data: {msg.get('data')}")
 
                 if msg_type == "progress":
                     pd = msg.get("data", {})
