@@ -328,7 +328,7 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Run
         batch = d['batch']
-        msg = await update.message.reply_text(f"🎬 Flux Pro: {batch}x {data['res']}", reply_markup=get_main_kb(uid))
+        msg = await update.message.reply_text(f"🎬 Flux Pro: {batch}x {data['res']}", reply_markup=stop_kb())
         track_message(uid, msg.message_id)
         asyncio.create_task(run_flux_batch(context, uid, data, batch, msg))
         
@@ -412,7 +412,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if d['flux_store']:
                 data = d['flux_store']
                 batch = d['batch']
-                m = await update.message.reply_text(f"🚀 Flux {batch}x ({data['res']})...", reply_markup=get_main_kb(uid))
+                m = await update.message.reply_text(f"🚀 Flux {batch}x ({data['res']})...", reply_markup=stop_kb())
                 track_message(uid, m.message_id)
                 asyncio.create_task(run_flux_batch(context, uid, data, batch, m))
             else:
