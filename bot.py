@@ -568,9 +568,10 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                     return False, f"⏰ Таймаут ({GEN_TIMEOUT}s)", None
 
                 try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=5)
+                    # Увеличим timeout, чтобы дожидаться долгих шагов генерации
+                    raw = await asyncio.wait_for(ws.recv(), timeout=20)
                 except asyncio.TimeoutError:
-                    # Каждые 5 сек проверяем history напрямую
+                    # Каждые 20 сек проверяем history напрямую (fallback)
                     result_data = _check_history()
                     if result_data:
                         return await _process_result(result_data)
