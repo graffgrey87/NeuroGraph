@@ -282,7 +282,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
     track_message(uid, update.message.message_id)
-    msg = await update.message.reply_text(f"🤖 **NeuroGraph v8.3**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
+    msg = await update.message.reply_text(f"🤖 **NeuroGraph v8.4**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):

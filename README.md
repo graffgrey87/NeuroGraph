@@ -45,7 +45,7 @@ Telegram-бот для генерации изображений через **Co
 
 ```
 NeuroGraph/
-├── bot.py                     # Ядро бота (v8.3)
+├── bot.py                     # Ядро бота (v8.4)
 ├── webapp_server.py           # FastAPI-сервер для WebApp Пульта
 ├── install.sh                 # Автоустановка на RunPod (aria2 turbo)
 ├── TI2I_Flux2_Klein.json      # Flux workflow
