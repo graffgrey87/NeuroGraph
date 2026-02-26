@@ -590,18 +590,20 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
 
                 if msg_type == "progress":
                     pd = msg.get("data", {})
-                    if pd.get("prompt_id", pid) == pid:
-                        step = pd.get("value", 0)
-                        max_steps = pd.get("max", 1)
-                        pct = int(step / max_steps * 100) if max_steps > 0 else 0
-                        now = time.time()
-                        if status_msg and (now - last_update >= 2 or step == max_steps):
-                            try:
-                                progress_text = f"🎬 {batch_label} | {step}/{max_steps} ({pct}%)" if batch_label else f"⏳ {step}/{max_steps} ({pct}%)"
-                                await status_msg.edit_text(progress_text, reply_markup=stop_kb())
-                                last_update = now
-                            except Exception as uerr:
-                                logging.error(f"UPDATE PROGRESS ERROR: {uerr}")
+                    # В сложных воркфлоу (Flux) ComfyUI может использовать внутренние суброутин-ID.
+                    # Но так как мы подключены с уникальным clientId, чужих ивентов тут быть не может.
+                    # Мы просто проверяем, что это прогресс генерации.
+                    step = pd.get("value", 0)
+                    max_steps = pd.get("max", 1)
+                    pct = int(step / max_steps * 100) if max_steps > 0 else 0
+                    now = time.time()
+                    if status_msg and (now - last_update >= 2 or step == max_steps):
+                        try:
+                            progress_text = f"🎬 {batch_label} | {step}/{max_steps} ({pct}%)" if batch_label else f"⏳ {step}/{max_steps} ({pct}%)"
+                            await status_msg.edit_text(progress_text, reply_markup=stop_kb())
+                            last_update = now
+                        except Exception as uerr:
+                            logging.error(f"UPDATE PROGRESS ERROR: {uerr}")
 
                 elif msg_type == "executed" and msg.get("data", {}).get("prompt_id") == pid:
                     # Генерация завершена — ждём history с увеличенным таймаутом (до 60 секунд)
