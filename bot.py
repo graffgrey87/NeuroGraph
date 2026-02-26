@@ -1,4 +1,4 @@
-import websockets, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64
+import websockets, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64, logging
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from fast_downloader import (
@@ -588,7 +588,7 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
 
                 if msg_type == "progress":
                     pd = msg.get("data", {})
-                    print(f"WS PROGRESS MSG: {msg}") # DEBUG PROG
+                    logging.error(f"WS PROGRESS MSG: {msg}") # DEBUG PROG
                     if pd.get("prompt_id", pid) == pid:
                         step = pd.get("value", 0)
                         max_steps = pd.get("max", 1)
@@ -600,9 +600,9 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                                 await status_msg.edit_text(progress_text, reply_markup=stop_kb())
                                 last_update = now
                             except Exception as uerr:
-                                print(f"UPDATE PROGRESS ERROR: {uerr}")
+                                logging.error(f"UPDATE PROGRESS ERROR: {uerr}")
                     else:
-                        print(f"WS PROGRESS PID MISMATCH: msg pid={pd.get('prompt_id')} vs our pid={pid}")
+                        logging.error(f"WS PROGRESS PID MISMATCH: msg pid={pd.get('prompt_id')} vs our pid={pid}")
 
                 elif msg_type == "executed" and msg.get("data", {}).get("prompt_id") == pid:
                     # Генерация завершена — ждём history с увеличенным таймаутом (до 60 секунд)
