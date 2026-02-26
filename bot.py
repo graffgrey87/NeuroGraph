@@ -588,6 +588,7 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
 
                 if msg_type == "progress":
                     pd = msg.get("data", {})
+                    print(f"WS PROGRESS MSG: {msg}") # DEBUG PROG
                     if pd.get("prompt_id", pid) == pid:
                         step = pd.get("value", 0)
                         max_steps = pd.get("max", 1)
