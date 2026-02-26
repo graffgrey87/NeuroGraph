@@ -605,6 +605,23 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                         except Exception as uerr:
                             logging.error(f"UPDATE PROGRESS ERROR: {uerr}")
 
+                elif msg_type == "progress_state":
+                    # ComfyUI (с новыми Custom Nodes / Flux) может присылать прогресс в виде состояния нод
+                    pd = msg.get("data", {})
+                    nodes = pd.get("nodes", {})
+                    if nodes:
+                        total = len(nodes)
+                        finished = sum(1 for n in nodes.values() if n.get("state") == "finished")
+                        pct = int((finished / total) * 100) if total > 0 else 0
+                        now = time.time()
+                        if status_msg and (now - last_update >= 2 or finished == total):
+                            try:
+                                progress_text = f"⚙️ {batch_label} | {finished}/{total} нод ({pct}%)" if batch_label else f"⚙️ Подготовка: {finished}/{total} нод ({pct}%)"
+                                await status_msg.edit_text(progress_text, reply_markup=stop_kb())
+                                last_update = now
+                            except Exception as uerr:
+                                logging.error(f"UPDATE PROGRESS STATE ERROR: {uerr}")
+
                 elif msg_type == "executed" and msg.get("data", {}).get("prompt_id") == pid:
                     # Генерация завершена — ждём history с увеличенным таймаутом (до 60 секунд)
                     for _ in range(30):
