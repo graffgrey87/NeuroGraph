@@ -558,6 +558,7 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
         return None
 
     # --- Основной цикл: WebSocket с fallback на polling ---
+    finished_nodes_set = set()
     try:
         async with websockets.connect(ws_url, close_timeout=2) as ws:
             last_update = 0
@@ -606,17 +607,27 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                             logging.error(f"UPDATE PROGRESS ERROR: {uerr}")
 
                 elif msg_type == "progress_state":
-                    # ComfyUI (с новыми Custom Nodes / Flux) может присылать прогресс в виде состояния нод
+                    # ComfyUI присылает progress_state кусками (по 1-2 текущих узла)
+                    # Нам нужно собирать общее количество завершенных узлов
                     pd = msg.get("data", {})
                     nodes = pd.get("nodes", {})
+                    
                     if nodes:
-                        total = len(nodes)
-                        finished = sum(1 for n in nodes.values() if n.get("state") == "finished")
-                        pct = int((finished / total) * 100) if total > 0 else 0
+                        new_finished = False
+                        for node_id, node_info in nodes.items():
+                            if node_info.get("state") == "finished":
+                                if node_id not in finished_nodes_set:
+                                    finished_nodes_set.add(node_id)
+                                    new_finished = True
+                        
+                        finished_count = len(finished_nodes_set)
                         now = time.time()
-                        if status_msg and (now - last_update >= 2 or finished == total):
+                        
+                        # Обновляем не чаще раза в 2 секунды (или если только что завершилась новая нода и прошло хотя бы 1 сек)
+                        if status_msg and (now - last_update >= 1.5) and finished_count > 0:
                             try:
-                                progress_text = f"⚙️ {batch_label} | {finished}/{total} нод ({pct}%)" if batch_label else f"⚙️ Подготовка: {finished}/{total} нод ({pct}%)"
+                                # Просто показываем счетчик завершенных нод, так как общее количество для сокета неизвестно заранее
+                                progress_text = f"⚙️ {batch_label} | Завершено: {finished_count} нод" if batch_label else f"⚙️ Подготовка: завершено {finished_count} нод"
                                 await status_msg.edit_text(progress_text, reply_markup=stop_kb())
                                 last_update = now
                             except Exception as uerr:
