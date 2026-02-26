@@ -176,13 +176,19 @@ echo ""
 echo "✅ Все модели загружены."
 
 # 5. КОПИРОВАНИЕ И ЗАПУСК
-echo "🤖 Копирую файлы бота..."
-cp /workspace/installer/bot.py /workspace/bot.py
-cp /workspace/installer/fast_downloader.py /workspace/fast_downloader.py
-cp /workspace/installer/webapp_server.py /workspace/webapp_server.py
-cp /workspace/installer/*.json /workspace/ 2>/dev/null
+echo "🤖 Загружаю актуальные файлы бота с GitHub..."
+BASE_URL="https://raw.githubusercontent.com/graffgrey87/NeuroGraph/main"
+
+wget -q -O /workspace/bot.py "$BASE_URL/bot.py"
+wget -q -O /workspace/fast_downloader.py "$BASE_URL/fast_downloader.py"
+wget -q -O /workspace/webapp_server.py "$BASE_URL/webapp_server.py"
+
+# Копируем пресеты и конфиги (оставляем старый метод или тоже с гитхаба, если нужно, но пока скачаем presets.json)
+wget -q -O /workspace/presets.json "$BASE_URL/presets.json"
+
 mkdir -p /workspace/templates
-cp /workspace/installer/templates/index.html /workspace/templates/ 2>/dev/null
+wget -q -O /workspace/templates/index.html "$BASE_URL/templates/index.html"
+
 [ -d "/workspace/installer/wildcards" ] && cp -r "/workspace/installer/wildcards" "/workspace/ComfyUI/"
 
 echo "🔄 Перезапуск служб..."
