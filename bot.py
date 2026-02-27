@@ -288,13 +288,14 @@ def get_main_kb(uid):
         final_url = f"{WEBAPP_URL}?init={b64_str}"
     except: pass
 
+    censor_btn = "🔞 Цензура: ВКЛ" if d.get('censor', False) else "🔞 Цензура: ВЫКЛ"
     kb = [
         [KeyboardButton("🎛 ОТКРЫТЬ ПУЛЬТ (Flux)", web_app=WebAppInfo(url=final_url))],
         [KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
         [KeyboardButton(f"🔄 WF: {WORKFLOWS[d['wf']]['name']}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
         [KeyboardButton(f"{ico} Режим: {d['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
         [KeyboardButton(f"🏷 Сет: {d['dataset_name']}"), KeyboardButton("📁 История"), KeyboardButton("🌐 Ссылки")],
-        [KeyboardButton("📥 Загрузчик")]
+        [KeyboardButton("📥 Загрузчик"), KeyboardButton(censor_btn)]
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -375,7 +376,7 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for r in active_refs:
                 try:
                     img_data = get_view(r['image'], "", "input")
-                    media.append(InputMediaPhoto(img_data, caption=f"Ref {r['idx']}"))
+                    media.append(InputMediaPhoto(img_data, caption=f"Ref {r['idx']}", has_spoiler=d.get('censor', False)))
                 except: pass
             
             if media:
@@ -408,6 +409,16 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_user_data()
             m = await update.message.reply_text(f"🔢 Batch: {d['batch']}", reply_markup=get_main_kb(uid))
         else: m = await update.message.reply_text("Введите число", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
+        return
+
+    if text.startswith("🔞 Цензура:"):
+        d['censor'] = not d.get('censor', False)
+        save_user_data()
+        m = await update.message.reply_text(
+            f"✅ Режим цензуры: {'включен (спойлер)' if d['censor'] else 'выключен'}", 
+            reply_markup=get_main_kb(uid)
+        )
         track_message(uid, m.message_id)
         return
 
@@ -505,7 +516,7 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for h in items:
                 try:
                     idata = get_view(h['filename'], h['subfolder'], h['type'])
-                    media.append(InputMediaPhoto(idata))
+                    media.append(InputMediaPhoto(idata, has_spoiler=d.get('censor', False)))
                 except: pass
             if media:
                 msgs = await context.bot.send_media_group(uid, media)
@@ -595,7 +606,7 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                     for img in out[nid]['images']:
                         try:
                             idata = get_view(img['filename'], img['subfolder'], img['type'])
-                            m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid))
+                            m = await context.bot.send_photo(uid, idata, caption=caption, parse_mode="HTML", reply_markup=get_main_kb(uid), has_spoiler=get_user_data(uid).get('censor', False))
                             track_message(uid, m.message_id)
                             found = True
                             d = get_user_data(uid)
