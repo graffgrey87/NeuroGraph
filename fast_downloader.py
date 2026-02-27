@@ -8,43 +8,68 @@ import os
 import json
 import asyncio
 import time
+import uuid
 
 BASE_DIR = os.environ.get("WORKSPACE_DIR", "/workspace")
 MODELS_DIR = os.path.join(BASE_DIR, "ComfyUI/models")
 PRESETS_FILE = os.path.join(BASE_DIR, "presets.json")
+CUSTOM_PRESETS_FILE = os.path.join(BASE_DIR, "custom_presets.json")
 
 # ==========================================
 # 📦 PRESETS I/O
 # ==========================================
 
-def load_presets() -> dict:
-    """Загружает presets.json. Возвращает {'categories': {}, 'presets': {}}."""
-    if not os.path.exists(PRESETS_FILE):
-        return {"categories": {}, "presets": {}}
+def load_custom_presets() -> dict:
+    if not os.path.exists(CUSTOM_PRESETS_FILE):
+        return {"categories": {}, "presets": {}, "components": {}}
     try:
-        with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+        with open(CUSTOM_PRESETS_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        print(f"⚠️ Ошибка чтения presets.json: {e}")
-        return {"categories": {}, "presets": {}}
+        print(f"⚠️ Ошибка чтения custom_presets.json: {e}")
+        return {"categories": {}, "presets": {}, "components": {}}
+
+def save_custom_presets(data: dict):
+    try:
+        with open(CUSTOM_PRESETS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ Ошибка записи custom_presets.json: {e}")
+
+def load_presets() -> dict:
+    """Загружает presets.json и custom_presets.json, объединяя их."""
+    base = {"categories": {}, "presets": {}, "components": {}}
+    if os.path.exists(PRESETS_FILE):
+        try:
+            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+                b = json.load(f) or {}
+                base["categories"].update(b.get("categories") or {})
+                base["presets"].update(b.get("presets") or {})
+                for ctype, comps in (b.get("components") or {}).items():
+                    base.setdefault("components", {}).setdefault(ctype, {}).update(comps)
+        except Exception as e:
+            print(f"⚠️ Ошибка чтения presets.json: {e}")
+
+    custom = load_custom_presets() or {}
+    base["categories"].update(custom.get("categories") or {})
+    base["presets"].update(custom.get("presets") or {})
+    for ctype, comps in (custom.get("components") or {}).items():
+        base.setdefault("components", {}).setdefault(ctype, {}).update(comps)
+        
+    return base
 
 
 def save_presets(data: dict):
-    """Сохраняет presets.json."""
-    try:
-        with open(PRESETS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"⚠️ Ошибка записи presets.json: {e}")
+    """Оставляем заглушку, чтобы не ломался импорт, хотя файл мы не перезаписываем"""
+    pass
 
 
 def add_preset(key: str, name: str, category: str, files: list[dict]) -> bool:
     """
-    Добавляет пользовательский пресет.
-    files: [{"url": "...", "folder": "loras", "filename": null}, ...]
+    Добавляет пользовательский пресет в custom.
     """
-    data = load_presets()
-    data["presets"][key] = {
+    data = load_custom_presets()
+    data.setdefault("presets", {})[key] = {
         "name": name,
         "category": category,
         "size": "?",
@@ -52,7 +77,7 @@ def add_preset(key: str, name: str, category: str, files: list[dict]) -> bool:
     }
     if category not in data.get("categories", {}):
         data.setdefault("categories", {})[category] = {"icon": "📦"}
-    save_presets(data)
+    save_custom_presets(data)
     return True
 
 
@@ -125,7 +150,6 @@ def build_preset(name: str, model_key: str, vae_key: str, encoder_key: str) -> s
     if not model or not vae or not encoder:
         return None
     
-    import uuid
     key = f"CUST_{uuid.uuid4().hex[:8]}"
     files = []
     for comp in [model, vae, encoder]:
@@ -135,30 +159,31 @@ def build_preset(name: str, model_key: str, vae_key: str, encoder_key: str) -> s
             "filename": comp.get("filename")
         })
     
-    data["presets"][key] = {
+    custom_data = load_custom_presets()
+    custom_data.setdefault("presets", {})[key] = {
         "name": name,
         "category": "Custom",
         "size": "?",
         "files": files
     }
-    if "Custom" not in data.get("categories", {}):
-        data.setdefault("categories", {})["Custom"] = {"icon": "📦"}
-    save_presets(data)
+    if "Custom" not in custom_data.get("categories", {}):
+        custom_data.setdefault("categories", {})["Custom"] = {"icon": "📦"}
+    save_custom_presets(custom_data)
     return key
 
 
 def add_component(comp_type: str, key: str, name: str, url: str, folder: str) -> bool:
-    """Добавляет компонент в каталог."""
+    """Добавляет компонент в каталог custom_presets."""
     if comp_type not in ("models", "vae", "text_encoders"):
         return False
-    data = load_presets()
+    data = load_custom_presets()
     data.setdefault("components", {}).setdefault(comp_type, {})[key] = {
         "name": name,
         "url": url,
         "folder": folder,
         "filename": url.split("/")[-1].split("?")[0]
     }
-    save_presets(data)
+    save_custom_presets(data)
     return True
 
 
