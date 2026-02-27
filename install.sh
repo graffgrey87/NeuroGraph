@@ -182,6 +182,7 @@ BASE_URL="https://raw.githubusercontent.com/graffgrey87/NeuroGraph/main"
 wget -q -O /workspace/bot.py "$BASE_URL/bot.py"
 wget -q -O /workspace/fast_downloader.py "$BASE_URL/fast_downloader.py"
 wget -q -O /workspace/webapp_server.py "$BASE_URL/webapp_server.py"
+wget -q -O /workspace/TI2I_Flux2_Klein.json "$BASE_URL/TI2I_Flux2_Klein.json"
 
 # Копируем пресеты и конфиги (оставляем старый метод или тоже с гитхаба, если нужно, но пока скачаем presets.json)
 wget -q -O /workspace/presets.json "$BASE_URL/presets.json"
