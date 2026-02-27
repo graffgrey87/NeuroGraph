@@ -72,6 +72,31 @@ def _save_user_data(data):
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+@app.get("/status", response_class=HTMLResponse)
+async def status_page(request: Request):
+    return templates.TemplateResponse("status.html", {"request": request})
+
+@app.get("/api/system_status")
+async def get_system_status():
+    import urllib.request
+    import urllib.error
+    
+    comfy_url = "http://127.0.0.1:3000"
+    try:
+        # Статика (GPU, RAM)
+        req_stats = urllib.request.Request(f"{comfy_url}/system_stats")
+        with urllib.request.urlopen(req_stats, timeout=2) as res:
+            stats = json.loads(res.read())
+            
+        # Динамика (очередь Pending/Running)
+        req_queue = urllib.request.Request(f"{comfy_url}/queue")
+        with urllib.request.urlopen(req_queue, timeout=2) as res:
+            queue = json.loads(res.read())
+            
+        return JSONResponse({"status": "online", "stats": stats, "queue": queue})
+    except Exception as e:
+        return JSONResponse({"status": "offline", "error": str(e)})
+
 # === PRESETS API ===
 @app.get("/api/presets")
 async def get_presets(uid: str = ""):

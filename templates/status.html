@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NeuroGraph Status</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --panel-bg: rgba(30, 41, 59, 0.7);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --glass-blur: blur(12px);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.15), transparent 25%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        .title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            background: linear-gradient(90deg, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            backdrop-filter: var(--glass-blur);
+            transition: all 0.3s ease;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .status-badge.online .status-dot { background: var(--success); color: var(--success); }
+        .status-badge.offline .status-dot { background: var(--danger); color: var(--danger); }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            backdrop-filter: var(--glass-blur);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .card-icon {
+            font-size: 1.25rem;
+        }
+
+        .metric-group {
+            margin-bottom: 1.5rem;
+        }
+        .metric-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .metric-title {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .metric-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 0.25rem;
+        }
+
+        .metric-sub {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), #60a5fa);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        
+        .progress-fill.high { background: linear-gradient(90deg, var(--warning), #fbbf24); }
+        .progress-fill.critical { background: linear-gradient(90deg, var(--danger), #f87171); }
+
+        .queue-stats {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .queue-box {
+            flex: 1;
+            background: rgba(0,0,0,0.2);
+            padding: 1rem;
+            border-radius: 0.75rem;
+            text-align: center;
+            border: 1px solid var(--panel-border);
+        }
+
+        .queue-num {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .queue-box.running .queue-num { color: var(--success); }
+        .queue-box.pending .queue-num { color: var(--warning); }
+
+        .error-message {
+            color: var(--danger);
+            font-size: 0.875rem;
+            margin-top: 1rem;
+            padding: 0.75rem;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 0.5rem;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            display: none;
+        }
+
+        @media (max-width: 600px) {
+            .dashboard { grid-template-columns: 1fr; }
+        }
+        
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            border-top-color: var(--text-main);
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 0.5rem;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .spinner.active { opacity: 1; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">NeuroGraph Monitor</h1>
+            <div class="status-badge" id="server-status">
+                <div class="status-dot"></div>
+                <span id="status-text">Connecting...</span>
+                <div class="spinner" id="refresh-spinner"></div>
+            </div>
+        </div>
+
+        <div id="error-container" class="error-message"></div>
+
+        <div class="dashboard">
+            <!-- Queue Card -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⚡</span>
+                    Generation Queue
+                </div>
+                <div class="queue-stats">
+                    <div class="queue-box running">
+                        <div class="queue-num" id="q-running">0</div>
+                        <div class="metric-sub">Running</div>
+                    </div>
+                    <div class="queue-box pending">
+                        <div class="queue-num" id="q-pending">0</div>
+                        <div class="metric-sub">Pending</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GPU Card -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🎮</span>
+                    GPU Hardware
+                </div>
+                <div id="gpu-container">
+                    <div class="metric-group">
+                        <div class="metric-sub">Loading data...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System RAM Card -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🧠</span>
+                    System Memory
+                </div>
+                <div class="metric-group">
+                    <div class="metric-title">
+                        <span>RAM Usage</span>
+                        <span id="ram-percent">0%</span>
+                    </div>
+                    <div class="metric-value" id="ram-used">0 GB</div>
+                    <div class="metric-sub" id="ram-total">of 0 GB Total</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="ram-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function formatBytes(bytes, decimals = 2) {
+            if (!+bytes) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        function updateProgressBar(elId, percent) {
+            const el = document.getElementById(elId);
+            if (!el) return;
+            el.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+            el.className = 'progress-fill';
+            if (percent > 90) el.classList.add('critical');
+            else if (percent > 75) el.classList.add('high');
+        }
+
+        function renderGPUs(devices) {
+            const container = document.getElementById('gpu-container');
+            if (!devices || devices.length === 0) {
+                container.innerHTML = '<div class="metric-sub">No GPU info available</div>';
+                return;
+            }
+
+            let html = '';
+            devices.forEach((gpu, index) => {
+                const total = gpu.vram_total || 0;
+                const free = gpu.vram_free || 0;
+                const used = total - free;
+                const percent = total > 0 ? (used / total) * 100 : 0;
+                
+                html += `
+                    <div class="metric-group">
+                        <div class="metric-title">
+                            <span>${gpu.name || `GPU ${index}`}</span>
+                            <span>${percent.toFixed(1)}%</span>
+                        </div>
+                        <div class="metric-value">${formatBytes(used, 1)}</div>
+                        <div class="metric-sub">of ${formatBytes(total, 1)} VRAM</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill ${percent > 90 ? 'critical' : (percent > 75 ? 'high' : '')}" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        async function fetchStatus() {
+            const spinner = document.getElementById('refresh-spinner');
+            spinner.classList.add('active');
+            
+            try {
+                const res = await fetch('/api/system_status');
+                const data = await res.json();
+                
+                const badge = document.getElementById('server-status');
+                const text = document.getElementById('status-text');
+                const errBox = document.getElementById('error-container');
+                
+                if (data.status === 'online') {
+                    badge.className = 'status-badge online';
+                    text.textContent = 'ComfyUI Online';
+                    errBox.style.display = 'none';
+                    
+                    // Queue
+                    const queue = data.queue || {};
+                    const running = queue.queue_running ? queue.queue_running.length : 0;
+                    const pending = queue.queue_pending ? queue.queue_pending.length : 0;
+                    
+                    document.getElementById('q-running').textContent = running;
+                    document.getElementById('q-pending').textContent = pending;
+                    
+                    // Stats
+                    const stats = data.stats || {};
+                    const system = stats.system || {};
+                    const devices = stats.devices || [];
+                    
+                    // RAM
+                    const ramTotal = system.ram_total || 0;
+                    const ramFree = system.ram_free || 0;
+                    const ramUsed = ramTotal - ramFree;
+                    const ramPct = ramTotal > 0 ? (ramUsed / ramTotal) * 100 : 0;
+                    
+                    document.getElementById('ram-used').textContent = formatBytes(ramUsed, 1);
+                    document.getElementById('ram-total').textContent = `of ${formatBytes(ramTotal, 1)} Total`;
+                    document.getElementById('ram-percent').textContent = `${ramPct.toFixed(1)}%`;
+                    updateProgressBar('ram-bar', ramPct);
+                    
+                    // GPU
+                    renderGPUs(devices);
+                    
+                } else {
+                    badge.className = 'status-badge offline';
+                    text.textContent = 'ComfyUI Offline';
+                    errBox.textContent = `Backend error: ${data.error || 'Unknown error'}`;
+                    errBox.style.display = 'block';
+                }
+            } catch (err) {
+                const badge = document.getElementById('server-status');
+                badge.className = 'status-badge offline';
+                document.getElementById('status-text').textContent = 'Server Unreachable';
+                console.error("Status fetch failed:", err);
+            } finally {
+                setTimeout(() => spinner.classList.remove('active'), 200);
+            }
+        }
+
+        // Initial fetch and start polling
+        fetchStatus();
+        setInterval(fetchStatus, 2000);
+    </script>
+</body>
+</html>
