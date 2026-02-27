@@ -186,6 +186,7 @@ wget -q -O /workspace/TI2I_Flux2_Klein.json "$BASE_URL/TI2I_Flux2_Klein.json"
 
 # Копируем пресеты и конфиги (оставляем старый метод или тоже с гитхаба, если нужно, но пока скачаем presets.json)
 wget -q -O /workspace/presets.json "$BASE_URL/presets.json"
+wget -q -O /workspace/custom_presets.json "$BASE_URL/custom_presets.json"
 
 mkdir -p /workspace/templates
 wget -q -O /workspace/templates/index.html "$BASE_URL/templates/index.html"

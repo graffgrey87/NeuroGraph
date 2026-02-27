@@ -9,6 +9,7 @@ import json
 import asyncio
 import time
 import uuid
+import requests
 
 BASE_DIR = os.environ.get("WORKSPACE_DIR", "/workspace")
 MODELS_DIR = os.path.join(BASE_DIR, "ComfyUI/models")
@@ -33,6 +34,37 @@ def save_custom_presets(data: dict):
     try:
         with open(CUSTOM_PRESETS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+            
+        gh_token = os.environ.get("GITHUB_TOKEN")
+        if gh_token:
+            import base64
+            url = "https://api.github.com/repos/graffgrey87/NeuroGraph/contents/custom_presets.json"
+            headers = {
+                "Authorization": f"token {gh_token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            # Получаем текущий SHA файла
+            resp = requests.get(url, headers=headers)
+            sha = ""
+            if resp.status_code == 200:
+                sha = resp.json().get("sha", "")
+                
+            # Кодируем новый контент
+            content_str = json.dumps(data, ensure_ascii=False, indent=2)
+            encoded_content = base64.b64encode(content_str.encode("utf-8")).decode("utf-8")
+            
+            payload = {
+                "message": "Bot: update custom presets",
+                "content": encoded_content
+            }
+            if sha:
+                payload["sha"] = sha
+                
+            put_resp = requests.put(url, headers=headers, json=payload)
+            if put_resp.status_code in (200, 201):
+                print("✅ Кастомные пресеты успешно сохранены на GitHub")
+            else:
+                print(f"⚠️ Ошибка сохранения на GitHub: {put_resp.status_code} - {put_resp.text}")
     except Exception as e:
         print(f"⚠️ Ошибка записи custom_presets.json: {e}")
 

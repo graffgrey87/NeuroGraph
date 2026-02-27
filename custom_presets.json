@@ -1,0 +1,13 @@
+{
+  "categories": {
+    "Custom": {
+      "icon": "📦"
+    }
+  },
+  "presets": {},
+  "components": {
+    "models": {},
+    "vae": {},
+    "text_encoders": {}
+  }
+}
