@@ -615,7 +615,12 @@
     </div>
 
     <div class="node">
-        <div class="head">📝 Prompt</div>
+        <div class="head">
+            <span>📝 Prompt</span>
+            <div class="tgl"
+                onclick="document.getElementById('pos').value=''; document.getElementById('neg').value='';">🗑 Clear
+            </div>
+        </div>
         <textarea id="pos" rows="3" placeholder="Positive prompt..."></textarea>
         <textarea id="neg" rows="2" placeholder="Negative prompt..."></textarea>
     </div>
@@ -752,15 +757,20 @@
                     addLora();
                     let sels = document.querySelectorAll('.l-sel');
                     let ws = document.querySelectorAll('.l-w');
+                    let tgls = document.querySelectorAll('.l-tgl');
                     sels[sels.length - 1].value = l.name;
                     ws[ws.length - 1].value = l.weight;
+                    if (l.active === false) { tgls[tgls.length - 1].classList.remove('on'); }
                 });
             }
 
             if (d.refs && d.refs.length) {
                 d.refs.forEach(r => {
                     let el = document.getElementById(`im_${r.idx}`);
-                    if (el) el.value = r.image;
+                    if (el) {
+                        el.value = r.image;
+                        showRefPreview(r.idx);
+                    }
                     if (r.active) { let a = document.getElementById(`act_${r.idx}`); if (a) a.classList.add('on'); }
                     if (r.flip) { let f = document.getElementById(`flp_${r.idx}`); if (f) f.classList.add('on'); }
                     let rt = document.getElementById(`rt_${r.idx}`);
@@ -799,6 +809,7 @@
         function addLora() {
             let d = document.createElement('div');
             d.innerHTML = `<div class="lora-row">
+                <div class="tgl l-tgl on" onclick="this.classList.toggle('on')" style="margin-right:2px; padding:2px 4px;">ON</div>
                 <select class="l-sel"><option value="">Select LoRA...</option>${availLoras.map(x => `<option>${x}</option>`)}</select>
                 <input type="number" class="l-w" value="0.8" step="0.1">
                 <span class="lora-del" onclick="this.parentElement.parentElement.remove()">✕</span>
@@ -879,7 +890,8 @@
             d.neg = document.getElementById('neg').value;
             d.loras = [];
             document.querySelectorAll('.l-sel').forEach((s, i) => {
-                if (s.value) d.loras.push({ name: s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value) });
+                let active = document.querySelectorAll('.l-tgl')[i].classList.contains('on');
+                if (s.value) d.loras.push({ name: s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value), active: active });
             });
             d.refs = [];
             for (let i = 1; i <= 6; i++) {
@@ -962,8 +974,9 @@
             };
 
             document.querySelectorAll('.l-sel').forEach((s, i) => {
+                let active = document.querySelectorAll('.l-tgl')[i].classList.contains('on');
                 if (s.value && s.value !== "")
-                    d.loras.push({ name: s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value) });
+                    d.loras.push({ name: s.value, weight: parseFloat(document.querySelectorAll('.l-w')[i].value), active: active });
             });
 
             for (let i = 1; i <= 6; i++) {

@@ -96,7 +96,7 @@ def get_user_data(uid):
             'image': None, 'mode': 'normal', 'wf': 'flux', 'batch': 1, 
             'dataset_name': 'Batch', 'msg_ids': [], 'history': [], 'presets': {},
             'loras': {1:0.0, 2:0.0, 3:0.0, 4:0.0}, 
-            'flux_store': None,
+            'flux_store': None, 'counters': {},
             'awaiting_lora': None, 'awaiting_custom_batch': False, 'awaiting_dataset_name': False,
             'build_state': None
         }
@@ -117,6 +117,31 @@ def repair_workflow(wf):
                 if isinstance(v, str): node["inputs"][k] = v.replace("\\", "/")
         clean_wf[nid] = node
     return clean_wf
+
+def parse_wildcards(text: str) -> str:
+    if not text:
+        return ""
+    
+    wildcards_dir = os.path.join(BASE_DIR, "NeuroGraph", "wildcards") 
+    # В RunPod путь может быть /workspace/NeuroGraph/wildcards или /workspace/wildcards
+    if not os.path.exists(wildcards_dir):
+        wildcards_dir = os.path.join(BASE_DIR, "wildcards")
+        
+    def replacer(match):
+        word = match.group(1)
+        filepath = os.path.join(wildcards_dir, f"{word}.txt")
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                if lines:
+                    return random.choice(lines)
+            except Exception as e:
+                logging.error(f"Error reading wildcard {word}: {e}")
+        return match.group(0) # Если файл не найден или пуст, оставляем как есть
+
+    # Ищем все вхождения вида __имя__
+    return re.sub(r'__([a-zA-Zа-яА-Я0-9_]+)__', replacer, text)
 
 def apply_flux_settings(wf, data, dataset_name="Batch", batch_idx=1):
     # 1. MODEL
@@ -140,8 +165,12 @@ def apply_flux_settings(wf, data, dataset_name="Batch", batch_idx=1):
     wf["117"]["inputs"]["seed"] = int(data["seed"]) if int(data["seed"]) != -1 else random.randint(1, 10**15)
     wf["119"]["inputs"]["Xi"] = int(data["steps"]); wf["119"]["inputs"]["Xf"] = int(data["steps"])
     wf["118"]["inputs"]["Xi"] = float(data["cfg"]); wf["118"]["inputs"]["Xf"] = float(data["cfg"])
-    wf["161"]["inputs"]["value"] = data["pos"]
-    wf["162"]["inputs"]["value"] = data["neg"]
+    
+    parsed_pos = parse_wildcards(data["pos"])
+    parsed_neg = parse_wildcards(data["neg"])
+    
+    wf["161"]["inputs"]["value"] = parsed_pos
+    wf["162"]["inputs"]["value"] = parsed_neg
     
     # 3. CONTROLS (mxSlider: Xi/Xf, не value)
     wf["146"]["inputs"]["Xi"] = int(data["rot"]); wf["146"]["inputs"]["Xf"] = int(data["rot"])
@@ -155,7 +184,8 @@ def apply_flux_settings(wf, data, dataset_name="Batch", batch_idx=1):
         for i in range(1,14): 
             if f"lora_{i}" in wf["153"]["inputs"]: wf["153"]["inputs"][f"lora_{i}"] = {"on": False}
         for i, l in enumerate(data["loras"]):
-            wf["153"]["inputs"][f"lora_{i+1}"] = {"on": True, "lora": l["name"], "strength": l["weight"]}
+            is_active = l.get("active", True)
+            wf["153"]["inputs"][f"lora_{i+1}"] = {"on": is_active, "lora": l["name"], "strength": l["weight"]}
 
     loaders = {1:"76", 2:"104", 3:"105", 4:"182", 5:"183", 6:"184"}
     for i in range(1,7): 
@@ -634,13 +664,13 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
                                 logging.error(f"UPDATE PROGRESS STATE ERROR: {uerr}")
 
                 elif msg_type == "executed" and msg.get("data", {}).get("prompt_id") == pid:
-                    # Генерация завершена — ждём history с увеличенным таймаутом (до 60 секунд)
-                    for _ in range(30):
+                    # Генерация завершена — ждём history с увеличенным таймаутом (до 5 минут)
+                    for _ in range(150):
                         result_data = _check_history()
                         if result_data:
                             return await _process_result(result_data)
                         await asyncio.sleep(2)
-                    return False, "❌ History не появился после executed (таймаут 60с)", None
+                    return False, "❌ History не появился после executed (таймаут 5м)", None
 
                 elif msg_type == "execution_error" and msg.get("data", {}).get("prompt_id") == pid:
                     err_msg = msg.get("data", {}).get("exception_message", "Execution error")
@@ -681,7 +711,10 @@ async def run_flux_batch(context, uid, data, batch, status_msg):
         d = get_user_data(uid)
         with open(WORKFLOWS["flux"]["file"], "r", encoding="utf-8") as f:
             wf = json.load(f)
-        wf = apply_flux_settings(wf, data, dataset_name=d['dataset_name'], batch_idx=i+1)
+        d['counters'][d['dataset_name']] = d['counters'].get(d['dataset_name'], 0) + 1
+        img_num = d['counters'][d['dataset_name']]
+        save_user_data()
+        wf = apply_flux_settings(wf, data, dataset_name=d['dataset_name'], batch_idx=img_num)
         try:
             found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}", user_prompt=user_prompt, status_msg=status_msg, batch_label=f"Flux {i+1}/{batch}")
             if err:
@@ -743,8 +776,12 @@ async def run_legacy_batch(context, uid, update):
             k = "string" if "string" in wf[tid]["inputs"] else "text"
             wf[tid]["inputs"][k] = prompt_txt
 
+        d['counters'][d['dataset_name']] = d['counters'].get(d['dataset_name'], 0) + 1
+        img_num = d['counters'][d['dataset_name']]
+        save_user_data()
+        
         if "211" in wf and "inputs" in wf["211"]:
-            wf["211"]["inputs"]["value"] = f"{d['dataset_name']}_{i+1:03d}"
+            wf["211"]["inputs"]["value"] = f"{d['dataset_name']}_{img_num:03d}"
 
         try:
             found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}", status_msg=status, batch_label=f"{cfg['name']} {i+1}/{batch}")
