@@ -550,13 +550,18 @@ async def run_workflow(context, uid, wf, batch_idx, user_prompt=None, status_msg
             if used_seed is not None:
                 caption += f" | 🎲 {used_seed}"
             if user_prompt:
-                caption += f"\n\n📝 {html.escape(user_prompt[:800])}"
+                clean_prompt = html.escape(user_prompt[:800])
+                # Если в промпте есть лоры, они обычно в формате <lora:...>
+                clean_prompt = re.sub(r'<lora:[^>]+>', '', clean_prompt).strip()
+                caption += f"\n\n📝 {clean_prompt}"
             else:
                 for nid, dat in out.items():
                     if 'text' in dat:
                         val = dat['text']
                         txt = str(val[0] if isinstance(val, list) else val)[:800]
-                        caption += f"\n\n📝 {html.escape(txt)}"
+                        txt = html.escape(txt)
+                        txt = re.sub(r'<lora:[^>]+>', '', txt).strip()
+                        caption += f"\n\n📝 {txt}"
                         break
 
             for nid in out:
