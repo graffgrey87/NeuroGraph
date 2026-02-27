@@ -123,9 +123,11 @@ def parse_wildcards(text: str) -> str:
         return ""
     
     wildcards_dir = os.path.join(BASE_DIR, "NeuroGraph", "wildcards") 
-    # В RunPod путь может быть /workspace/NeuroGraph/wildcards или /workspace/wildcards
+    # В RunPod путь может быть /workspace/NeuroGraph/wildcards, /workspace/wildcards или /workspace/ComfyUI/wildcards
     if not os.path.exists(wildcards_dir):
         wildcards_dir = os.path.join(BASE_DIR, "wildcards")
+        if not os.path.exists(wildcards_dir):
+            wildcards_dir = os.path.join(BASE_DIR, "ComfyUI", "wildcards")
         
     def replacer(match):
         word = match.group(1)
