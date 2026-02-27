@@ -881,6 +881,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         m = await context.bot.send_message(uid, "✅ Меню активно", reply_markup=get_main_kb(uid))
         track_message(uid, m.message_id)
 
+    elif q.data == "dl_close":
+        try:
+            await q.message.delete()
+        except: pass
+        return
+
     # --- DOWNLOADER CALLBACKS ---
     elif q.data.startswith("dlcat_"):
         cat = q.data[6:]
@@ -1039,6 +1045,7 @@ async def _show_dl_menu(message, edit=False):
         for cat, icon, count in cats[i:i+3]:
             row.append(InlineKeyboardButton(f"{icon} {cat} ({count})", callback_data=f"dlcat_{cat}"))
         kb.append(row)
+    kb.append([InlineKeyboardButton("❌ Закрыть", callback_data="dl_close")])
     
     text = "📥 **Загрузчик моделей**\nВыбери категорию:"
     if edit:
