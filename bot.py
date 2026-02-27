@@ -337,22 +337,61 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(f"🧠 **NeuroGraph v8.4**", reply_markup=get_main_kb(uid), parse_mode="Markdown")
     track_message(uid, msg.message_id)
 
+media_group_tasks = {}
+media_group_files = {}
+
+async def process_media_group(uid, media_group_id, chat_id, context):
+    files = media_group_files.pop(media_group_id, [])
+    if not files: return
+    try:
+        last_real = files[-1]
+        get_user_data(uid)['image'] = last_real
+        save_user_data()
+        msg_text = f"✅ Альбом загружен ({len(files)} шт).\nАктивное фото: `{last_real}`"
+        m = await context.bot.send_message(chat_id=chat_id, text=msg_text, parse_mode="Markdown", reply_markup=get_main_kb(uid))
+        track_message(uid, m.message_id)
+    except Exception as e:
+        print(f"Media group process error: {e}")
+
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update): return
     uid = update.effective_user.id
     track_message(uid, update.message.message_id)
-    msg = await update.message.reply_text("📥 Сохраняю...", reply_markup=get_main_kb(uid)) # КРЕПИМ МЕНЮ
-    track_message(uid, msg.message_id)
+    
+    media_group_id = getattr(update.message, 'media_group_id', None)
+    msg = None
+    if not media_group_id:
+        msg = await update.message.reply_text("📥 Сохраняю...", reply_markup=get_main_kb(uid))
+        track_message(uid, msg.message_id)
+
     try:
         f = await update.message.photo[-1].get_file()
-        fname = f"user_{uid}_{int(time.time())}.jpg"
+        fname = f"user_{uid}_{int(time.time())}_{random.randint(100,999)}.jpg"
         resp = upload_image(await f.download_as_bytearray(), fname)
         if resp:
             real = resp.get("name", fname)
-            get_user_data(uid)['image'] = real
-            await msg.edit_text(f"✅ Фото: `{real}`", parse_mode="Markdown")
-        else: await msg.edit_text("❌ Ошибка")
-    except Exception as e: await msg.edit_text(f"Error: {e}")
+            if media_group_id:
+                if media_group_id not in media_group_files:
+                    media_group_files[media_group_id] = []
+                media_group_files[media_group_id].append(real)
+                
+                if media_group_id in media_group_tasks:
+                    media_group_tasks[media_group_id].cancel()
+                
+                async def delayed_process():
+                    await asyncio.sleep(2.0)
+                    await process_media_group(uid, media_group_id, update.effective_chat.id, context)
+                
+                media_group_tasks[media_group_id] = asyncio.create_task(delayed_process())
+            else:
+                get_user_data(uid)['image'] = real
+                save_user_data()
+                if msg: await msg.edit_text(f"✅ Фото: `{real}`", parse_mode="Markdown")
+        else:
+            if msg: await msg.edit_text("❌ Ошибка загрузки")
+    except Exception as e:
+        print(f"Photo Err: {e}")
+        if msg: await msg.edit_text(f"Error: {e}")
 
 # --- WEBAPP (FLUX + MEMORY) ---
 async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
