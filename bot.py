@@ -715,8 +715,13 @@ async def run_flux_batch(context, uid, data, batch, status_msg):
         img_num = d['counters'][d['dataset_name']]
         save_user_data()
         wf = apply_flux_settings(wf, data, dataset_name=d['dataset_name'], batch_idx=img_num)
+        
+        final_prompt = user_prompt
+        if "161" in wf and "inputs" in wf["161"] and "value" in wf["161"]["inputs"]:
+            final_prompt = str(wf["161"]["inputs"]["value"])
+            
         try:
-            found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}", user_prompt=user_prompt, status_msg=status_msg, batch_label=f"Flux {i+1}/{batch}")
+            found, err, seed = await run_workflow(context, uid, wf, f"{i+1}/{batch}", user_prompt=final_prompt, status_msg=status_msg, batch_label=f"Flux {i+1}/{batch}")
             if err:
                 m = await context.bot.send_message(uid, err, reply_markup=get_main_kb(uid))
                 track_message(uid, m.message_id)
