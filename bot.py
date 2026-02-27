@@ -1,4 +1,4 @@
-import websockets, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64, logging
+import websockets, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64, logging, socket
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from fast_downloader import (
@@ -8,6 +8,26 @@ from fast_downloader import (
     download_cancel_flags,
     get_components, get_component, build_preset as fd_build_preset
 )
+
+_single_instance_socket = None
+def enforce_single_instance():
+    global _single_instance_socket
+    if sys.platform in ["linux", "linux2"]:
+        try:
+            _single_instance_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            _single_instance_socket.bind('\0neurograph_bot_lock')
+        except socket.error:
+            print("❌ Бот уже запущен (Single Instance). Завершение новой копии.")
+            sys.exit(1)
+    else:
+        try:
+            _single_instance_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            _single_instance_socket.bind(('127.0.0.1', 54321))
+        except socket.error:
+            print("❌ Бот уже запущен (Single Instance). Завершение новой копии.")
+            sys.exit(1)
+
+enforce_single_instance()
 
 # ==========================================
 # ⚙️ CONFIG
