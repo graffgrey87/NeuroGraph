@@ -8,71 +8,29 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --bg: #1a1a2e;
-            --node: #16213e;
-            --node-border: #0f3460;
-            --accent: #e94560;
-            --accent-glow: rgba(233, 69, 96, 0.3);
-            --text: #eee;
-            --dim: #8899aa;
-            --input-bg: #0a0a1a;
-            --border: #1a3a5c;
-            --success: #00d68f;
-            --warn: #f0a030;
-            --cam-rot: #e94560;
-            --cam-ang: #0fbcf9;
-            --cam-dist: #00d68f;
-        }
-
-        [data-theme="comfy"] {
+            /* Comfy Colors */
             --bg: #202020;
-            --node: #2a2a2a;
-            --node-border: #3a3a3a;
+            --grid-color: rgba(255, 255, 255, 0.05);
+            --node: #353535;
+            --node-border: #1a1a1a;
             --accent: #4e9eff;
             --accent-glow: rgba(78, 158, 255, 0.3);
-            --text: #ddd;
-            --dim: #888;
+            --text: #e0e0e0;
+            --dim: #aaaaaa;
             --input-bg: #1a1a1a;
-            --border: #444;
+            --input-border: #222222;
             --success: #6eff6e;
             --warn: #ffaa33;
-            --cam-rot: #ff6b6b;
-            --cam-ang: #4ecdc4;
-            --cam-dist: #ffe66d;
-        }
 
-        [data-theme="midnight"] {
-            --bg: #0d1117;
-            --node: #161b22;
-            --node-border: #21262d;
-            --accent: #58a6ff;
-            --accent-glow: rgba(88, 166, 255, 0.2);
-            --text: #c9d1d9;
-            --dim: #6e7681;
-            --input-bg: #010409;
-            --border: #30363d;
-            --success: #3fb950;
-            --warn: #d29922;
-            --cam-rot: #f778ba;
-            --cam-ang: #58a6ff;
-            --cam-dist: #3fb950;
-        }
+            /* Node Headers by Category */
+            --hdr-model: #29373D;
+            --hdr-prompt: #36292F;
+            --hdr-lora: #29243B;
+            --hdr-cam: #3B2A24;
+            --hdr-inpaint: #223026;
+            --hdr-refs: #303030;
 
-        [data-theme="warm"] {
-            --bg: #1c1410;
-            --node: #2a1f18;
-            --node-border: #3d2e22;
-            --accent: #e08900;
-            --accent-glow: rgba(224, 137, 0, 0.3);
-            --text: #e0d5c8;
-            --dim: #8a7a6a;
-            --input-bg: #110d08;
-            --border: #4a3828;
-            --success: #7bc67e;
-            --warn: #e0a030;
-            --cam-rot: #e06050;
-            --cam-ang: #50a0d0;
-            --cam-dist: #70c070;
+            --pin-color: #a9b5c2;
         }
 
         * {
@@ -80,49 +38,97 @@
         }
 
         body {
-            background: var(--bg);
+            background-color: var(--bg);
+            background-image: radial-gradient(var(--grid-color) 1px, transparent 1px);
+            background-size: 20px 20px;
             color: var(--text);
             font-family: 'Segoe UI', system-ui, sans-serif;
-            padding: 8px;
+            padding: 12px;
             padding-bottom: 90px;
             margin: 0;
-            transition: background 0.3s, color 0.3s;
         }
 
         .node {
             background: var(--node);
             border: 1px solid var(--node-border);
-            border-radius: 10px;
-            padding: 10px 12px;
-            margin-bottom: 8px;
-            position: relative;
-            overflow: hidden;
-            transition: background 0.3s, border-color 0.3s;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
         }
 
-        .node::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: var(--accent);
-            border-radius: 10px 10px 0 0;
-        }
-
-        .head {
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--dim);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 10px;
-            padding-bottom: 6px;
-            border-bottom: 1px solid var(--border);
+        .node-header {
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: bold;
+            color: #ddd;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border-top-left-radius: 7px;
+            border-top-right-radius: 7px;
+            border-bottom: 1px solid var(--node-border);
+            position: relative;
+        }
+
+        .node-header::after {
+            content: '';
+            display: block;
+            width: 8px;
+            height: 8px;
+            background: var(--pin-color);
+            border-radius: 50%;
+            position: absolute;
+            left: -4px;
+            top: 50%;
+            transform: translateY(-50%);
+            border: 1px solid var(--node-border);
+        }
+
+        .node-header::before {
+            content: '';
+            display: block;
+            width: 8px;
+            height: 8px;
+            background: var(--pin-color);
+            border-radius: 50%;
+            position: absolute;
+            right: -4px;
+            top: 50%;
+            transform: translateY(-50%);
+            border: 1px solid var(--node-border);
+        }
+
+        .hdr-model {
+            background: var(--hdr-model);
+        }
+
+        .hdr-prompt {
+            background: var(--hdr-prompt);
+        }
+
+        .hdr-lora {
+            background: var(--hdr-lora);
+        }
+
+        .hdr-cam {
+            background: var(--hdr-cam);
+        }
+
+        .hdr-inpaint {
+            background: var(--hdr-inpaint);
+        }
+
+        .hdr-refs {
+            background: var(--hdr-refs);
+        }
+
+        .node-content {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         select,
@@ -130,14 +136,14 @@
         textarea {
             width: 100%;
             background: var(--input-bg);
-            border: 1px solid var(--border);
+            border: 1px solid var(--input-border);
             color: var(--text);
             padding: 8px 10px;
-            border-radius: 6px;
+            border-radius: 4px;
             font-size: 13px;
-            margin-bottom: 6px;
             outline: none;
             transition: border-color 0.2s;
+            font-family: inherit;
         }
 
         select:focus,
@@ -150,44 +156,40 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 6px;
         }
 
         .col {
             display: flex;
             flex-direction: column;
             flex: 1;
+            gap: 4px;
         }
 
         .label {
-            font-size: 10px;
+            font-size: 11px;
             color: var(--dim);
-            margin-bottom: 3px;
             font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
         }
 
         input[type=range] {
             -webkit-appearance: none;
             appearance: none;
             flex: 1;
-            height: 6px;
-            border-radius: 3px;
-            background: var(--border);
+            height: 4px;
+            border-radius: 2px;
+            background: var(--input-border);
             outline: none;
             margin: 0;
         }
 
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 16px;
+            width: 12px;
             height: 16px;
-            border-radius: 50%;
+            border-radius: 2px;
             background: var(--accent);
             cursor: pointer;
-            border: 2px solid var(--node);
-            box-shadow: 0 0 6px var(--accent-glow);
+            border: 1px solid #000;
         }
 
         .badge {
@@ -197,6 +199,10 @@
             min-width: 28px;
             text-align: right;
             font-family: monospace;
+            background: var(--input-bg);
+            padding: 2px 4px;
+            border-radius: 4px;
+            border: 1px solid var(--input-border);
         }
 
         .slider-label {
@@ -207,66 +213,24 @@
 
         .cam-block {
             background: var(--input-bg);
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            border: 1px solid var(--input-border);
+            border-radius: 6px;
             padding: 8px;
-            margin-bottom: 6px;
-            position: relative;
-        }
-
-        .cam-block::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            bottom: 0;
-            width: 3px;
-            border-radius: 8px 0 0 8px;
-        }
-
-        .cam-block.rot::before {
-            background: var(--cam-rot);
-        }
-
-        .cam-block.ang::before {
-            background: var(--cam-ang);
-        }
-
-        .cam-block.dist::before {
-            background: var(--cam-dist);
         }
 
         .cam-title {
-            font-size: 10px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 11px;
+            font-weight: 600;
             margin-bottom: 6px;
-            padding-left: 6px;
-        }
-
-        .cam-block.rot .cam-title {
-            color: var(--cam-rot);
-        }
-
-        .cam-block.ang .cam-title {
-            color: var(--cam-ang);
-        }
-
-        .cam-block.dist .cam-title {
-            color: var(--cam-dist);
+            color: var(--dim);
         }
 
         .grid {
             display: grid;
             gap: 4px;
-            padding-left: 4px;
         }
 
-        .grid-6 {
-            grid-template-columns: repeat(3, 1fr);
-        }
-
+        .grid-6,
         .grid-5 {
             grid-template-columns: repeat(3, 1fr);
         }
@@ -277,56 +241,35 @@
 
         .btn {
             background: var(--node);
-            border: 1px solid var(--border);
-            padding: 7px 4px;
+            border: 1px solid var(--input-border);
+            padding: 6px 4px;
             text-align: center;
-            border-radius: 5px;
-            font-size: 10px;
-            font-weight: 600;
+            border-radius: 4px;
+            font-size: 11px;
             cursor: pointer;
-            color: var(--dim);
-            transition: all 0.15s;
+            color: var(--text);
             user-select: none;
         }
 
-        .btn:active {
-            transform: scale(0.95);
-        }
-
-        .cam-block.rot .btn.active {
-            background: var(--cam-rot);
+        .btn.active {
+            background: var(--accent);
             color: #fff;
-            border-color: var(--cam-rot);
-            box-shadow: 0 0 8px rgba(233, 69, 96, 0.4);
-        }
-
-        .cam-block.ang .btn.active {
-            background: var(--cam-ang);
-            color: #000;
-            border-color: var(--cam-ang);
-            box-shadow: 0 0 8px rgba(15, 188, 249, 0.4);
-        }
-
-        .cam-block.dist .btn.active {
-            background: var(--cam-dist);
-            color: #000;
-            border-color: var(--cam-dist);
-            box-shadow: 0 0 8px rgba(0, 214, 143, 0.4);
+            border-color: var(--accent);
         }
 
         .ref-card {
             background: var(--input-bg);
-            border: 1px solid var(--border);
-            padding: 6px 8px;
-            border-radius: 6px;
-            margin-bottom: 4px;
+            border: 1px solid var(--input-border);
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
         }
 
         .ref-top {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
         }
 
         .ref-body {
@@ -337,6 +280,7 @@
 
         .ref-body select {
             flex: 1;
+            margin: 0;
         }
 
         .ref-preview {
@@ -344,20 +288,18 @@
             height: 48px;
             object-fit: cover;
             border-radius: 4px;
-            border: 1px solid var(--border);
+            border: 1px solid var(--input-border);
             display: none;
         }
 
         .tgl {
-            background: var(--node);
-            color: var(--dim);
-            padding: 3px 8px;
+            background: var(--input-bg);
+            color: var(--text);
+            padding: 4px 8px;
             border-radius: 4px;
-            font-size: 10px;
-            font-weight: 600;
+            font-size: 11px;
             cursor: pointer;
-            border: 1px solid var(--border);
-            transition: all 0.15s;
+            border: 1px solid var(--input-border);
             user-select: none;
         }
 
@@ -370,13 +312,7 @@
         .rot-sel {
             width: auto;
             padding: 2px 4px;
-            height: 24px;
-            font-size: 10px;
-            background: var(--node);
-            margin: 0;
-            border: 1px solid var(--border);
-            color: var(--text);
-            border-radius: 4px;
+            height: auto;
         }
 
         .preset-bar {
@@ -391,25 +327,12 @@
         }
 
         .preset-btn {
-            background: var(--node);
-            border: 1px solid var(--border);
-            color: var(--dim);
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
             padding: 6px 10px;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 600;
+            border-radius: 4px;
+            font-size: 12px;
             cursor: pointer;
-            white-space: nowrap;
-            transition: all 0.15s;
-        }
-
-        .preset-btn:hover {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
-        .preset-btn:active {
-            transform: scale(0.95);
         }
 
         .lora-row {
@@ -417,18 +340,18 @@
             align-items: center;
             gap: 4px;
             background: var(--input-bg);
-            padding: 4px 6px;
-            border-radius: 5px;
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px solid var(--input-border);
             margin-bottom: 4px;
-            border: 1px solid var(--border);
         }
 
         .lora-row select {
             margin: 0;
             border: none;
-            font-size: 12px;
             background: transparent;
             flex: 1;
+            padding: 0;
         }
 
         .lora-row input {
@@ -439,6 +362,7 @@
             color: var(--accent);
             font-weight: 700;
             font-family: monospace;
+            padding: 0;
         }
 
         .lora-del {
@@ -446,30 +370,18 @@
             cursor: pointer;
             padding: 0 6px;
             font-weight: bold;
-            font-size: 14px;
-        }
-
-        .lora-del:hover {
-            color: #ff5555;
         }
 
         .add-btn {
-            background: var(--node);
-            border: 1px dashed var(--border);
+            background: var(--input-bg);
+            border: 1px dashed var(--input-border);
             padding: 8px;
             text-align: center;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 600;
+            border-radius: 4px;
+            font-size: 12px;
             cursor: pointer;
             color: var(--dim);
-            transition: all 0.2s;
-            margin-top: 6px;
-        }
-
-        .add-btn:hover {
-            border-color: var(--accent);
-            color: var(--accent);
+            margin-top: 4px;
         }
 
         #send {
@@ -478,217 +390,184 @@
             left: 10px;
             right: 10px;
             padding: 14px;
-            background: var(--accent);
-            border: none;
-            border-radius: 8px;
-            font-weight: 800;
-            font-size: 15px;
-            letter-spacing: 1px;
+            background: #2b553e;
+            border: 1px solid #3c7757;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
             width: calc(100% - 20px);
             color: #fff;
             cursor: pointer;
-            box-shadow: 0 4px 16px var(--accent-glow);
             z-index: 100;
-            text-transform: uppercase;
-            transition: background 0.2s;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
         }
 
         #send:active {
             transform: scale(0.98);
-        }
-
-        .theme-bar {
-            display: flex;
-            gap: 4px;
-            margin-bottom: 8px;
-        }
-
-        .theme-dot {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            cursor: pointer;
-            border: 2px solid transparent;
-            transition: border-color 0.2s, transform 0.15s;
-        }
-
-        .theme-dot:hover {
-            transform: scale(1.15);
-        }
-
-        .theme-dot.active {
-            border-color: #fff;
-        }
-
-        .theme-dot[data-t="default"] {
-            background: linear-gradient(135deg, #1a1a2e, #e94560);
-        }
-
-        .theme-dot[data-t="comfy"] {
-            background: linear-gradient(135deg, #202020, #4e9eff);
-        }
-
-        .theme-dot[data-t="midnight"] {
-            background: linear-gradient(135deg, #0d1117, #58a6ff);
-        }
-
-        .theme-dot[data-t="warm"] {
-            background: linear-gradient(135deg, #1c1410, #e08900);
+            background: #3c7757;
         }
     </style>
 </head>
 
-<body data-theme="default">
-
-    <div class="theme-bar">
-        <div class="theme-dot active" data-t="default" onclick="setTheme(this)" title="Neon"></div>
-        <div class="theme-dot" data-t="comfy" onclick="setTheme(this)" title="Comfy"></div>
-        <div class="theme-dot" data-t="midnight" onclick="setTheme(this)" title="Midnight"></div>
-        <div class="theme-dot" data-t="warm" onclick="setTheme(this)" title="Warm"></div>
-    </div>
+<body>
 
     <div class="node">
-        <div class="head">⚙️ Model & Settings <span id="status" style="color:var(--dim)">Loading...</span></div>
+        <div class="node-header hdr-model">⚙️ Model & Settings <span id="status"
+                style="color:var(--dim)">Loading...</span></div>
+        <div class="node-content">
+            <div class="label">Diffusion Model</div>
+            <select id="ckpt">
+                <option value="">Waiting for server...</option>
+            </select>
 
-        <div class="label">Diffusion Model</div>
-        <select id="ckpt">
-            <option value="">Waiting for server...</option>
-        </select>
-
-        <div class="row">
-            <div class="col">
-                <div class="label">CLIP</div><select id="clip">
-                    <option value="">Loading...</option>
-                </select>
+            <div class="row">
+                <div class="col">
+                    <div class="label">CLIP</div><select id="clip">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <div class="label">VAE</div><select id="vae">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
             </div>
-            <div class="col">
-                <div class="label">VAE</div><select id="vae">
-                    <option value="">Loading...</option>
-                </select>
+
+            <div class="row">
+                <div class="col">
+                    <div class="label">Precision</div>
+                    <select id="dtype">
+                        <option value="fp8_e4m3fn_fast">FP8 Fast</option>
+                        <option value="fp8_e4m3fn">FP8 Std</option>
+                        <option value="bf16">BF16</option>
+                        <option value="default">Default</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <div class="label">Sage Attn</div>
+                    <select id="sage">
+                        <option value="disabled">Disabled</option>
+                        <option value="enabled">Enabled</option>
+                        <option value="auto">Auto</option>
+                    </select>
+                </div>
             </div>
-        </div>
 
-        <div class="row">
-            <div class="col">
-                <div class="label">Precision</div>
-                <select id="dtype">
-                    <option value="fp8_e4m3fn_fast">FP8 Fast</option>
-                    <option value="fp8_e4m3fn">FP8 Std</option>
-                    <option value="bf16">BF16</option>
-                    <option value="default">Default</option>
-                </select>
+            <div class="label">Resolution</div>
+            <select id="res">
+                <option value="1024x1024 (Square)">1:1 Square (1024)</option>
+                <option value="832x1216 (Portrait)">2:3 Portrait</option>
+                <option value="1216x832 (Landscape)">3:2 Landscape</option>
+                <option value="16:9 (Landscape)">16:9 Cinema</option>
+                <option value="9:16 (Portrait)">9:16 Story</option>
+            </select>
+
+            <div class="row"><span class="slider-label">Steps</span><input type="range" id="steps" min="4" max="25"
+                    value="8" oninput="upd('v_st',this.value)"><span id="v_st" class="badge">8</span></div>
+            <div class="row"><span class="slider-label">CFG</span><input type="range" id="cfg" min="1.0" max="4.0"
+                    step="0.1" value="1.0" oninput="upd('v_cfg',this.value)"><span id="v_cfg" class="badge">1.0</span>
             </div>
-            <div class="col">
-                <div class="label">Sage Attn</div>
-                <select id="sage">
-                    <option value="disabled">Disabled</option>
-                    <option value="enabled">Enabled</option>
-                    <option value="auto">Auto</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="label">Resolution</div>
-        <select id="res">
-            <option value="1024x1024 (Square)">1:1 Square (1024)</option>
-            <option value="832x1216 (Portrait)">2:3 Portrait</option>
-            <option value="1216x832 (Landscape)">3:2 Landscape</option>
-            <option value="16:9 (Landscape)">16:9 Cinema</option>
-            <option value="9:16 (Portrait)">9:16 Story</option>
-        </select>
-
-        <div class="row"><span class="slider-label">Steps</span><input type="range" id="steps" min="4" max="25"
-                value="8" oninput="upd('v_st',this.value)"><span id="v_st" class="badge">8</span></div>
-        <div class="row"><span class="slider-label">CFG</span><input type="range" id="cfg" min="1.0" max="4.0"
-                step="0.1" value="1.0" oninput="upd('v_cfg',this.value)"><span id="v_cfg" class="badge">1.0</span></div>
-        <input type="text" id="seed" placeholder="Seed (-1 = Random)" value="-1">
-    </div>
-
-    <div class="node">
-        <div class="head">🖼 References</div>
-        <div id="refs"></div>
-        <div class="row" style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px">
-            <span class="slider-label">Ref Scale</span>
-            <input type="range" id="rscale" min="0" max="1.5" step="0.05" value="0.75"
-                oninput="upd('v_rs',this.value)"><span id="v_rs" class="badge">0.75</span>
+            <input type="text" id="seed" placeholder="Seed (-1 = Random)" value="-1">
         </div>
     </div>
 
     <div class="node">
-        <div class="head">
+        <div class="node-header hdr-refs">🖼 References</div>
+        <div class="node-content">
+            <div id="refs"></div>
+            <div class="row" style="margin-top:8px; border-top:1px solid var(--input-border); padding-top:6px">
+                <span class="slider-label">Ref Scale</span>
+                <input type="range" id="rscale" min="0" max="1.5" step="0.05" value="0.75"
+                    oninput="upd('v_rs',this.value)"><span id="v_rs" class="badge">0.75</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="node">
+        <div class="node-header hdr-prompt">
             <span>📝 Prompt</span>
             <div class="tgl"
                 onclick="document.getElementById('pos').value=''; document.getElementById('neg').value='';">🗑 Clear
             </div>
         </div>
-        <textarea id="pos" rows="3" placeholder="Positive prompt..."></textarea>
-        <textarea id="neg" rows="2" placeholder="Negative prompt..."></textarea>
-    </div>
-
-    <div class="node" style="--accent: var(--cam-rot)">
-        <div class="head">🎥 Camera Control</div>
-
-        <div class="cam-block rot">
-            <div class="cam-title">↻ Rotation</div>
-            <div class="grid grid-6" id="g_rot">
-                <div class="btn active" onclick="set(this,'rot',0)">Off</div>
-                <div class="btn" onclick="set(this,'rot',1)">Front</div>
-                <div class="btn" onclick="set(this,'rot',2)">¾</div>
-                <div class="btn" onclick="set(this,'rot',3)">Side</div>
-                <div class="btn" onclick="set(this,'rot',4)">Back¾</div>
-                <div class="btn" onclick="set(this,'rot',5)">Back</div>
-            </div>
-            <input type="hidden" id="rot" value="0">
-        </div>
-
-        <div class="cam-block ang">
-            <div class="cam-title">⟡ Angle</div>
-            <div class="grid grid-5" id="g_ang">
-                <div class="btn active" onclick="set(this,'ang',0)">Off</div>
-                <div class="btn" onclick="set(this,'ang',4)">High</div>
-                <div class="btn" onclick="set(this,'ang',3)">Straight</div>
-                <div class="btn" onclick="set(this,'ang',2)">Low</div>
-                <div class="btn" onclick="set(this,'ang',1)">V.Low</div>
-            </div>
-            <input type="hidden" id="ang" value="0">
-        </div>
-
-        <div class="cam-block dist">
-            <div class="cam-title">⊞ Distance</div>
-            <div class="grid grid-4" id="g_dist">
-                <div class="btn active" onclick="set(this,'dist',0)">Off</div>
-                <div class="btn" onclick="set(this,'dist',1)">Close</div>
-                <div class="btn" onclick="set(this,'dist',2)">Half</div>
-                <div class="btn" onclick="set(this,'dist',3)">Full</div>
-            </div>
-            <input type="hidden" id="dist" value="0">
+        <div class="node-content">
+            <textarea id="pos" rows="3" placeholder="Positive prompt..."></textarea>
+            <textarea id="neg" rows="2" placeholder="Negative prompt..."></textarea>
         </div>
     </div>
 
     <div class="node">
-        <div class="head">🖌 Inpaint</div>
-        <div class="row"><span class="slider-label">Context</span><input type="range" id="ctx" min="1" max="2"
-                step="0.1" value="1.2" oninput="upd('v_ctx',this.value)"><span id="v_ctx" class="badge">1.2</span></div>
-        <div class="row"><span class="slider-label">Rescale</span><input type="range" id="resc" min="1" max="2"
-                step="0.1" value="1.0" oninput="upd('v_resc',this.value)"><span id="v_resc" class="badge">1.0</span>
+        <div class="node-header hdr-cam">🎥 Camera Control</div>
+        <div class="node-content">
+            <div class="cam-block rot">
+                <div class="cam-title" style="color:#f778ba">↻ Rotation</div>
+                <div class="grid grid-6" id="g_rot">
+                    <div class="btn active" onclick="set(this,'rot',0)">Off</div>
+                    <div class="btn" onclick="set(this,'rot',1)">Front</div>
+                    <div class="btn" onclick="set(this,'rot',2)">¾</div>
+                    <div class="btn" onclick="set(this,'rot',3)">Side</div>
+                    <div class="btn" onclick="set(this,'rot',4)">Back¾</div>
+                    <div class="btn" onclick="set(this,'rot',5)">Back</div>
+                </div>
+                <input type="hidden" id="rot" value="0">
+            </div>
+
+            <div class="cam-block ang">
+                <div class="cam-title" style="color:#58a6ff">⟡ Angle</div>
+                <div class="grid grid-5" id="g_ang">
+                    <div class="btn active" onclick="set(this,'ang',0)">Off</div>
+                    <div class="btn" onclick="set(this,'ang',4)">High</div>
+                    <div class="btn" onclick="set(this,'ang',3)">Straight</div>
+                    <div class="btn" onclick="set(this,'ang',2)">Low</div>
+                    <div class="btn" onclick="set(this,'ang',1)">V.Low</div>
+                </div>
+                <input type="hidden" id="ang" value="0">
+            </div>
+
+            <div class="cam-block dist">
+                <div class="cam-title" style="color:#3fb950">⊞ Distance</div>
+                <div class="grid grid-4" id="g_dist">
+                    <div class="btn active" onclick="set(this,'dist',0)">Off</div>
+                    <div class="btn" onclick="set(this,'dist',1)">Close</div>
+                    <div class="btn" onclick="set(this,'dist',2)">Half</div>
+                    <div class="btn" onclick="set(this,'dist',3)">Full</div>
+                </div>
+                <input type="hidden" id="dist" value="0">
+            </div>
         </div>
     </div>
 
     <div class="node">
-        <div class="head">🧩 LoRA Stacker</div>
-        <div id="loras"></div>
-        <div class="add-btn" onclick="addLora()">+ Add LoRA</div>
+        <div class="node-header hdr-inpaint">🖌 Inpaint</div>
+        <div class="node-content">
+            <div class="row"><span class="slider-label">Context</span><input type="range" id="ctx" min="1" max="2"
+                    step="0.1" value="1.2" oninput="upd('v_ctx',this.value)"><span id="v_ctx" class="badge">1.2</span>
+            </div>
+            <div class="row"><span class="slider-label">Rescale</span><input type="range" id="resc" min="1" max="2"
+                    step="0.1" value="1.0" oninput="upd('v_resc',this.value)"><span id="v_resc" class="badge">1.0</span>
+            </div>
+        </div>
     </div>
 
     <div class="node">
-        <div class="head">💾 Presets</div>
-        <div class="preset-bar">
-            <select id="preset_list">
-                <option value="">— Нет пресетов —</option>
-            </select>
-            <div class="preset-btn" onclick="loadPreset()">📂</div>
-            <div class="preset-btn" onclick="savePreset()">💾</div>
-            <div class="preset-btn" onclick="deletePreset()">🗑</div>
+        <div class="node-header hdr-lora">🧩 LoRA Stacker</div>
+        <div class="node-content">
+            <div id="loras"></div>
+            <div class="add-btn" onclick="addLora()">+ Add LoRA</div>
+        </div>
+    </div>
+
+    <div class="node">
+        <div class="node-header hdr-refs">💾 Presets</div>
+        <div class="node-content">
+            <div class="preset-bar">
+                <select id="preset_list">
+                    <option value="">— Нет пресетов —</option>
+                </select>
+                <div class="preset-btn" onclick="loadPreset()">📂</div>
+                <div class="preset-btn" onclick="savePreset()">💾</div>
+                <div class="preset-btn" onclick="deletePreset()">🗑</div>
+            </div>
         </div>
     </div>
 
@@ -697,14 +576,6 @@
     <script>
         let tg = window.Telegram.WebApp; tg.expand();
         let availLoras = [], availImgs = [], currentUid = '';
-
-        function setTheme(el) {
-            document.body.setAttribute('data-theme', el.dataset.t);
-            document.querySelectorAll('.theme-dot').forEach(d => d.classList.remove('active'));
-            el.classList.add('active');
-            try { localStorage.setItem('ng_theme', el.dataset.t); } catch (e) { }
-        }
-        try { let t = localStorage.getItem('ng_theme'); if (t) { let el = document.querySelector(`.theme-dot[data-t="${t}"]`); if (el) setTheme(el); } } catch (e) { }
 
         function upd(id, v) { document.getElementById(id).innerText = v }
         function set(el, type, val) {
@@ -765,6 +636,8 @@
             }
 
             if (d.refs && d.refs.length) {
+                document.getElementById('refs').innerHTML = '';
+                renderRefs();
                 d.refs.forEach(r => {
                     let el = document.getElementById(`im_${r.idx}`);
                     if (el) {
@@ -853,7 +726,7 @@
                 }
             } catch (e) {
                 document.getElementById('status').innerText = "API Error";
-                document.getElementById('status').style.color = "var(--cam-rot)";
+                document.getElementById('status').style.color = "#ff6b6b";
             }
         }
         function showRefPreview(idx) {
