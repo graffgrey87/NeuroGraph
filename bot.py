@@ -290,7 +290,7 @@ def get_main_kb(uid):
 
     censor_btn = "🔞 Цензура: ВКЛ" if d.get('censor', False) else "🔞 Цензура: ВЫКЛ"
     kb = [
-        [KeyboardButton("🎛 ОТКРЫТЬ ПУЛЬТ (Flux)", web_app=WebAppInfo(url=final_url))],
+        [KeyboardButton("🎛 ОТКРЫТЬ ПУЛЬТ", web_app=WebAppInfo(url=final_url)), KeyboardButton("📊 СТАТУС", web_app=WebAppInfo(url=f"{WEBAPP_URL}/status"))],
         [KeyboardButton("🚀 ГЕНЕРАЦИЯ"), KeyboardButton("🗑 ОЧИСТИТЬ")],
         [KeyboardButton(f"🔄 WF: {WORKFLOWS[d['wf']]['name']}"), KeyboardButton(f"🔢 Кол-во: {d['batch']}")],
         [KeyboardButton(f"{ico} Режим: {d['mode'].upper()}"), KeyboardButton("🎛 LORA MIXER")],
