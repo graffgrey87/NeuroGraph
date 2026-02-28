@@ -190,6 +190,7 @@ wget -q -O /workspace/custom_presets.json "$BASE_URL/custom_presets.json"
 
 mkdir -p /workspace/templates
 wget -q -O /workspace/templates/index.html "$BASE_URL/templates/index.html"
+wget -q -O /workspace/templates/status.html "$BASE_URL/templates/status.html"
 
 [ -d "/workspace/installer/wildcards" ] && cp -r "/workspace/installer/wildcards" "/workspace/ComfyUI/"
 
