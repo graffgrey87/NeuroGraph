@@ -51,7 +51,8 @@ NeuroGraph/
 ├── TI2I_Flux2_Klein.json      # Flux workflow
 ├── workflow_api.json          # Qwen Edit workflow
 ├── templates/
-│   └── index.html             # WebApp Пульт (Flux)
+│   ├── index.html             # WebApp Пульт (Стиль ComfyUI)
+│   └── status.html            # WebApp Серверная статистика
 ├── wildcards/                 # Шаблоны промптов (16 файлов)
 └── docs/
     ├── Changelog.md           # История изменений
