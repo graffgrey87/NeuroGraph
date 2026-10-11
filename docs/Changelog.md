@@ -1,5 +1,16 @@
 # NeuroGraph — Changelog
 
+## 23. Миграция на собственный Docker-образ и CUDA 13.0 для RunPod (2026-10-12)
+
+- **Отказ от чужого образа (`smyshnikof`):** Полный переход на собственный Docker-образ `graffgrey87/neurograph:cu130`.
+- **Поддержка драйверов RunPod 580+:** Интегрированы CUDA 13.0.0 (V13.0.48), Python 3.13 и PyTorch 2.14.1+cu130. Ошибки `CUDA unknown error` и `CUDA not available` полностью устранены.
+- **CI/CD в GitHub Actions:** Развёрнут автоматический воркфлоу `.github/workflows/docker-build.yml` для облачной сборки и публикации образов в Docker Hub без нагрузки на локальный ПК.
+- **Оптимизация холодного старта:** Ядро ComfyUI, окружение и все кастомные ноды зашиты внутрь образа (`/opt/venv`, `/opt/ComfyUI`), благодаря чему под на RunPod с пустым Volume Disk (200 ГБ) стартует за 1–2 минуты без повторной установки библиотек.
+- **Принудительный IPv4 для Telegram API:** В `bot.py` и системный `gai.conf` внедрено принудительное переключение на IPv4 (`socket.AF_INET`), устраняющее ошибку `httpx.ConnectError: All connection attempts failed` в сетях RunPod без IPv6-маршрутизации.
+- **Вшиты все кастомные ноды воркфлоу:** В образ добавлены `CRT-Nodes` (ноды `Resolution`, `FancyTimerNode`), `ComfyUI-KJNodes`, `rgthree-comfy`, `ComfyUI-GGUF`, `ComfyUI-Impact-Pack`, `ComfyUI-Easy-Use`, `ComfyUI_Comfyroll_CustomNodes`, `mikey_nodes`, `comfy-image-saver`, `ComfyUI-Custom-Scripts`, `ComfyUI-Inpaint-CropAndStitch`, `ComfyUI-basic_data_handling`.
+
+---
+
 ## 22. Интеграция интерфейса в стиле ComfyUI для WebApp (2026-02-28)
 
 - **Новый дизайн**: Интерфейс приложения (`templates/index.html`) полностью переработан в аутентичный визуальный стиль **ComfyUI**.

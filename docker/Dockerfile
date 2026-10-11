@@ -83,7 +83,14 @@ RUN cd ${COMFYUI_PATH}/custom_nodes && \
     git clone --depth 1 https://github.com/giriss/comfy-image-saver.git && \
     git clone --depth 1 https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git && \
     git clone --depth 1 https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch.git && \
-    git clone --depth 1 https://github.com/StableLlama/ComfyUI-basic_data_handling.git
+    git clone --depth 1 https://github.com/StableLlama/ComfyUI-basic_data_handling.git && \
+    git clone --depth 1 https://github.com/PGCRT/CRT-Nodes.git && \
+    git clone --depth 1 https://github.com/kijai/ComfyUI-KJNodes.git && \
+    git clone --depth 1 https://github.com/rgthree/rgthree-comfy.git && \
+    git clone --depth 1 https://github.com/city96/ComfyUI-GGUF.git && \
+    git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Pack.git && \
+    git clone --depth 1 https://github.com/yolain/ComfyUI-Easy-Use.git && \
+    git clone --depth 1 https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes.git
 
 # Устанавливаем зависимости нод
 RUN for node_dir in ${COMFYUI_PATH}/custom_nodes/*/; do \
