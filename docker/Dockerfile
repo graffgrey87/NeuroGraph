@@ -6,15 +6,15 @@
 FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
 
 LABEL maintainer="graffgrey87"
-LABEL description="NeuroGraph: ComfyUI + Telegram Bot for RunPod"
+LABEL description="NeuroGraph: ComfyUI + Telegram Bot for RunPod (CUDA 13.0 / cu130)"
 
 # ── Переменные окружения ──
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     SHELL=/bin/bash \
     WORKSPACE=/workspace \
-    VENV_PATH=/workspace/venv \
-    COMFYUI_PATH=/workspace/ComfyUI \
+    VENV_PATH=/opt/venv \
+    COMFYUI_PATH=/opt/ComfyUI \
     TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" \
     PIP_PREFER_BINARY=1 \
     PIP_NO_CACHE_DIR=1
@@ -50,10 +50,9 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     ln -sf /usr/bin/python3.13 /usr/bin/python
 
 # ==========================================
-# 3. WORKSPACE + VENV + PYTORCH cu130
+# 3. VENV + PYTORCH cu130 (в /opt/venv)
 # ==========================================
-RUN mkdir -p ${WORKSPACE} && \
-    python3.13 -m venv ${VENV_PATH}
+RUN python3.13 -m venv ${VENV_PATH}
 
 # Активируем venv для всех последующих RUN
 ENV PATH="${VENV_PATH}/bin:${PATH}"
@@ -62,7 +61,7 @@ RUN pip install --upgrade pip setuptools wheel && \
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 
 # ==========================================
-# 4. COMFYUI
+# 4. COMFYUI (в /opt/ComfyUI)
 # ==========================================
 RUN git clone https://github.com/comfyanonymous/ComfyUI.git ${COMFYUI_PATH} && \
     cd ${COMFYUI_PATH} && \
@@ -86,7 +85,7 @@ RUN cd ${COMFYUI_PATH}/custom_nodes && \
     git clone --depth 1 https://github.com/ltdrdata/comfyui-inpaint-cropandstitch.git && \
     git clone --depth 1 https://github.com/StableLlama/ComfyUI-basic_data_handling.git
 
-# Устанавливаем зависимости нод (если есть requirements.txt)
+# Устанавливаем зависимости нод
 RUN for node_dir in ${COMFYUI_PATH}/custom_nodes/*/; do \
         if [ -f "${node_dir}requirements.txt" ]; then \
             echo "📦 Installing deps for $(basename ${node_dir})..." && \
@@ -95,7 +94,7 @@ RUN for node_dir in ${COMFYUI_PATH}/custom_nodes/*/; do \
     done
 
 # ==========================================
-# 7. ЗАВИСИМОСТИ БОТА (python-telegram-bot, fastapi, etc.)
+# 7. ЗАВИСИМОСТИ БОТА И WEBAPP
 # ==========================================
 RUN pip install \
     python-telegram-bot \
@@ -126,7 +125,7 @@ RUN mkdir -p /var/run/sshd && \
 RUN echo "daemon off;" >> /etc/nginx/nginx.conf
 
 # ==========================================
-# 10. СОЗДАЁМ СТРУКТУРУ ДИРЕКТОРИЙ
+# 10. ШАБЛОНЫ И СТРУКТУРА ДИРЕКТОРИЙ
 # ==========================================
 RUN mkdir -p \
     ${COMFYUI_PATH}/models/diffusion_models \
@@ -134,8 +133,13 @@ RUN mkdir -p \
     ${COMFYUI_PATH}/models/vae \
     ${COMFYUI_PATH}/models/loras \
     ${COMFYUI_PATH}/input \
-    ${WORKSPACE}/templates \
-    ${WORKSPACE}/wildcards
+    /opt/neurograph
+
+# Копируем локальные файлы проекта в образ как базовый слепок
+COPY wildcards /opt/neurograph/wildcards
+COPY templates /opt/neurograph/templates
+COPY presets.json /opt/neurograph/presets.json
+COPY custom_presets.json /opt/neurograph/custom_presets.json
 
 # ==========================================
 # 11. СКРИПТЫ ЗАПУСКА
@@ -147,6 +151,7 @@ RUN chmod +x /start.sh /neurograph_startup.sh
 # ==========================================
 # 12. ПОРТЫ
 # ==========================================
+# 3000: ComfyUI, 8081: FileBrowser, 8099: WebApp, 8888: JupyterLab, 22: SSH
 EXPOSE 3000 8081 8099 8888 22
 
 # ==========================================
