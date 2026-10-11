@@ -42,7 +42,7 @@ cd $CN_PATH
 [ ! -d "mikey_nodes" ] && git clone --depth 1 https://github.com/bash-j/mikey_nodes.git &
 [ ! -d "comfy-image-saver" ] && git clone --depth 1 https://github.com/giriss/comfy-image-saver.git &
 [ ! -d "ComfyUI-Custom-Scripts" ] && git clone --depth 1 https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git &
-[ ! -d "comfyui-inpaint-cropandstitch" ] && git clone --depth 1 https://github.com/ltdrdata/comfyui-inpaint-cropandstitch.git &
+[ ! -d "ComfyUI-Inpaint-CropAndStitch" ] && git clone --depth 1 https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch.git &
 [ ! -d "ComfyUI-basic_data_handling" ] && git clone --depth 1 https://github.com/StableLlama/ComfyUI-basic_data_handling.git &
 wait
 echo "✅ Ноды готовы."

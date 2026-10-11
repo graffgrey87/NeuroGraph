@@ -82,7 +82,7 @@ RUN cd ${COMFYUI_PATH}/custom_nodes && \
     git clone --depth 1 https://github.com/bash-j/mikey_nodes.git && \
     git clone --depth 1 https://github.com/giriss/comfy-image-saver.git && \
     git clone --depth 1 https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git && \
-    git clone --depth 1 https://github.com/ltdrdata/comfyui-inpaint-cropandstitch.git && \
+    git clone --depth 1 https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch.git && \
     git clone --depth 1 https://github.com/StableLlama/ComfyUI-basic_data_handling.git
 
 # Устанавливаем зависимости нод
