@@ -22,7 +22,9 @@ export COMFYUI_PATH=${WORKSPACE}/ComfyUI
 # ==========================================
 start_nginx() {
     echo "🌐 Starting Nginx..."
-    service nginx start 2>/dev/null || true
+    sed -i '/daemon off;/d' /etc/nginx/nginx.conf 2>/dev/null || true
+    service nginx start 2>/dev/null || nginx 2>/dev/null || true
+    echo "   Nginx ready."
 }
 
 # ==========================================
