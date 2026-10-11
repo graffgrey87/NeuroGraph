@@ -41,10 +41,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ==========================================
 # 2. PYTHON 3.13 (deadsnakes PPA)
 # ==========================================
-RUN add-apt-repository ppa:deadsnakes/ppa && \
+RUN add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    python3.13 python3.13-venv python3.13-dev python3.13-distutils && \
+    python3.13 python3.13-venv python3.13-dev && \
     rm -rf /var/lib/apt/lists/* && \
     ln -sf /usr/bin/python3.13 /usr/bin/python3 && \
     ln -sf /usr/bin/python3.13 /usr/bin/python
