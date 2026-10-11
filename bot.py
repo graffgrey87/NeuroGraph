@@ -1,4 +1,10 @@
 import websockets, uuid, json, urllib.request, urllib.parse, requests, random, os, time, traceback, re, sys, html, asyncio, base64, logging, socket
+
+# Принудительный IPv4 (устраняет ошибку ConnectError в сетях без маршрутизации IPv6)
+_orig_getaddrinfo = socket.getaddrinfo
+def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+socket.getaddrinfo = _ipv4_getaddrinfo
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from fast_downloader import (

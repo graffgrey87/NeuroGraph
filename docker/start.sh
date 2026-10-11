@@ -17,6 +17,9 @@ export VENV_PATH=/opt/venv
 export PATH="${VENV_PATH}/bin:${PATH}"
 export COMFYUI_PATH=${WORKSPACE}/ComfyUI
 
+# Приоритет IPv4 над IPv6 (устраняет сбои httpx к Telegram API)
+echo "precedence ::ffff:0:0/96 100" >> /etc/gai.conf 2>/dev/null || true
+
 # ==========================================
 # 1. NGINX
 # ==========================================
