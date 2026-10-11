@@ -70,11 +70,11 @@ def _save_user_data(data):
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 @app.get("/status", response_class=HTMLResponse)
 async def status_page(request: Request):
-    return templates.TemplateResponse("status.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="status.html")
 
 @app.get("/api/system_status")
 async def get_system_status():
